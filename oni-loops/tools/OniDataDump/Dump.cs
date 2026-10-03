@@ -281,7 +281,7 @@ namespace OniDataDump
 				}
 				// Tame metabolism from the critter's base trait: kcal burned per cycle and stomach
 				// size. Wild critters burn tuning.wildCritterCalorieBurnRatio of this.
-				Modifiers modifiers = prefab.GetComponent<Modifiers>();
+				Klei.AI.Modifiers modifiers = prefab.GetComponent<Klei.AI.Modifiers>();
 				if (modifiers != null && modifiers.initialTraits != null)
 				{
 					string calorieDelta = Db.Get().Amounts.Calories.deltaAttribute.Id;
