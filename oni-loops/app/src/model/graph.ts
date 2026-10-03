@@ -29,6 +29,11 @@ export type ProcessKind =
 export interface Flow {
   tag: string
   amount: number
+  /**
+   * Alternative inputs, any one of which satisfies this flow (a Pacu eats any seed). The
+   * step then consumes whichever one the chain arrives with; `tag` is the first of them.
+   */
+  anyOf?: string[]
 }
 
 export interface Needs {
@@ -65,6 +70,13 @@ export interface Graph {
   critters: Map<string, { name: string; dlc: DlcRestriction }>
   /** Ids of elements that exist in play; their amounts are kilograms. */
   elements: Set<string>
+  /** Item id -> kind (seed, food, egg, critter, plant, item). */
+  kinds: Map<string, string>
+}
+
+/** The input flow of `p` that `tag` satisfies, if any. */
+export function inputFor(p: Process, tag: string): Flow | undefined {
+  return p.inputs.find((f) => f.tag === tag || f.anyOf?.includes(tag))
 }
 
 const NONE: DlcRestriction = { requires: [], forbids: [] }
@@ -209,25 +221,35 @@ export function buildGraph(d: GameData): Graph {
   const critters = new Map<string, { name: string; dlc: DlcRestriction }>()
   for (const c of d.critters) {
     critters.set(c.id, { name: c.name, dlc: c.dlc })
-    for (const diet of c.diet ?? []) {
-      if (!diet.produces || diet.produces === 'Vacuum' || diet.produces === 'Void') continue
-      for (const food of diet.eats) {
+    // Babies eat and die like their adults; only the adult is listed (and ranched).
+    if (!c.adult) {
+      // One process per (output, rate): a Pacu that eats thirty seeds alike is one step with
+      // thirty alternative inputs, not thirty steps.
+      const groups = new Map<string, { produces: string; rate: number; caloriesPerKg: number; foods: string[] }>()
+      for (const diet of c.diet ?? []) {
+        if (!diet.produces || diet.produces === 'Vacuum' || diet.produces === 'Void') continue
+        const key = `${diet.produces}|${diet.producedPerKgEaten}|${diet.caloriesPerKg}`
+        const g = groups.get(key) ?? { produces: diet.produces, rate: diet.producedPerKgEaten, caloriesPerKg: diet.caloriesPerKg, foods: [] }
+        for (const food of diet.eats) if (!g.foods.includes(food)) g.foods.push(food)
+        groups.set(key, g)
+      }
+      for (const g of groups.values()) {
         add({
           kind: 'diet',
           via: c.name,
           viaId: c.id,
-          inputs: [{ tag: food, amount: 1 }],
-          outputs: [{ tag: diet.produces, amount: diet.producedPerKgEaten }],
+          inputs: [{ tag: g.foods[0]!, amount: 1, anyOf: g.foods.length > 1 ? g.foods : undefined }],
+          outputs: [{ tag: g.produces, amount: g.rate }],
           dlc: c.dlc,
           needs: { critter: c.id },
           wildFactor: d.tuning.wildCritterCalorieBurnRatio,
           notes: c.caloriesBurnedPerCycle
-            ? [`eats ${fmt(c.caloriesBurnedPerCycle / diet.caloriesPerKg)} kg/cycle when tame, ${fmt(c.caloriesBurnedPerCycle * d.tuning.wildCritterCalorieBurnRatio / diet.caloriesPerKg)} wild`]
+            ? [`eats ${fmt(c.caloriesBurnedPerCycle / g.caloriesPerKg)} kg/cycle when tame, ${fmt((c.caloriesBurnedPerCycle * d.tuning.wildCritterCalorieBurnRatio) / g.caloriesPerKg)} wild`]
             : [],
         })
       }
     }
-    for (const drop of c.deathDrops ?? []) {
+    for (const drop of c.adult ? [] : (c.deathDrops ?? [])) {
       add({ kind: 'drop', via: c.name, viaId: c.id, inputs: [{ tag: c.id, amount: 1 }], outputs: [{ tag: drop.tag, amount: drop.count }], dlc: c.dlc, needs: { critter: c.id }, notes: ['on death'] })
     }
     if (c.egg && c.cyclesPerEgg) {
@@ -309,9 +331,10 @@ export function buildGraph(d: GameData): Graph {
   const byInput = new Map<string, Process[]>()
   for (const p of processes) {
     for (const o of p.outputs) push(byOutput, o.tag, p)
-    for (const i of p.inputs) push(byInput, i.tag, p)
+    for (const i of p.inputs) for (const tag of i.anyOf ?? [i.tag]) push(byInput, tag, p)
   }
-  return { processes, byOutput, byInput, critters, elements: elementIds }
+  const kinds = new Map(d.items.map((it) => [it.id, it.kind]))
+  return { processes, byOutput, byInput, critters, elements: elementIds, kinds }
 }
 
 function push(map: Map<string, Process[]>, key: string, p: Process) {

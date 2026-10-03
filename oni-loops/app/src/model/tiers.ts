@@ -140,7 +140,8 @@ export function computeTiers(d: GameData, graph: Graph, colony: Colony, cluster:
       let worst: Tier = 'renewable'
       let feasible = true
       for (const i of p.inputs) {
-        const t = tier.get(i.tag)
+        // Any one of alternative inputs will do, so the best-placed one counts.
+        const t = i.anyOf ? bestTier(i.anyOf.map((tag) => tier.get(tag))) : tier.get(i.tag)
         if (t === undefined || t === 'none') {
           feasible = false
           break
@@ -158,8 +159,14 @@ export function computeTiers(d: GameData, graph: Graph, colony: Colony, cluster:
   }
 }
 
+function bestTier(tiers: (Tier | undefined)[]): Tier | undefined {
+  let best: Tier | undefined
+  for (const t of tiers) if (t !== undefined && (best === undefined || TIER_ORDER[t] < TIER_ORDER[best])) best = t
+  return best
+}
+
 function describe(d: GameData, p: Process, worst: Tier): string {
-  const from = p.inputs.map((i) => label(d, i.tag)).join(' + ')
+  const from = p.inputs.map((i) => (i.anyOf ? `any of ${i.anyOf.length} foods` : label(d, i.tag))).join(' + ')
   const basis = worst === 'renewable' ? 'renewable inputs' : `${from} (${TIER_LABEL[worst]})`
   switch (p.kind) {
     case 'diet':

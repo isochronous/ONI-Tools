@@ -1,5 +1,5 @@
 import type { Flow, Graph, Process } from './graph'
-import { stepLabel } from './graph'
+import { inputFor, stepLabel } from './graph'
 import { TIER_ORDER, type Tier, type Tiers } from './tiers'
 
 /** What the player's colony has access to. */
@@ -91,10 +91,20 @@ function dlcLabel(id: string) {
 
 /** Ratio of `to` out per unit of `from` in, for a given process. */
 function stepRatio(p: Process, from: string, to: string): number {
-  const input = p.inputs.find((f) => f.tag === from)
+  const input = inputFor(p, from)
   const output = p.outputs.find((f) => f.tag === to)
   if (!output || !input || input.amount <= 0) return 0
   return output.amount / input.amount
+}
+
+/**
+ * A step's resource for the loop-folding key. When the next step takes it as one of several
+ * interchangeable inputs (any seed into a Pacu), the key names the kind of thing instead, so
+ * loops that differ only in which seed is fed fold into one.
+ */
+function pathTag(graph: Graph, s: Step, next: Step): string {
+  const flow = inputFor(next.process, s.to)
+  return flow?.anyOf ? 'any ' + (graph.kinds.get(s.to) ?? 'item') : s.to
 }
 
 /**
@@ -144,7 +154,7 @@ export function findLoops(graph: Graph, target: string, colony: Colony, tiers: T
           // Primary and side-stream variants of one path are different answers (a Lavatory plus a
           // Steam Turbine vs steam riding through a refinery), and so are variants whose extra
           // inputs sit on different tiers, so those never fold together.
-          const path = loop.steps.map((s) => s.to).join('>') + (loop.primary ? '|P' : '|S') + '|' + loop.worstTier
+          const path = loop.steps.map((s, i) => pathTag(graph, s, loop.steps[i + 1] ?? loop.steps[0]!)).join('>') + (loop.primary ? '|P' : '|S') + '|' + loop.worstTier
           const existing = byPath.get(path)
           if (!existing) {
             byPath.set(path, loop)
@@ -206,12 +216,14 @@ function summarise(graph: Graph, steps: Step[], ratio: number, target: string, c
   let carried = 1 // units of the current step's `from` per unit of target
   let minShare = 1
   for (const s of steps) {
-    const input = s.process.inputs.find((f) => f.tag === s.from)
+    const input = inputFor(s.process, s.from)
     const runs = input && input.amount > 0 ? carried / input.amount : 0
-    for (const f of s.process.inputs) net.set(f.tag, (net.get(f.tag) ?? 0) - f.amount * runs)
+    // An any-of input is consumed as whatever the chain arrived with.
+    const consumed = (f: Flow) => (f === input ? s.from : f.tag)
+    for (const f of s.process.inputs) net.set(consumed(f), (net.get(consumed(f)) ?? 0) - f.amount * runs)
     for (const f of s.process.outputs) net.set(f.tag, (net.get(f.tag) ?? 0) + f.amount * runs)
     // Mass share of the carried input, when every input is an element (so kg compares to kg).
-    if (input && s.process.inputs.every((f) => graph.elements.has(f.tag))) {
+    if (input && s.process.inputs.every((f) => graph.elements.has(consumed(f)))) {
       const total = s.process.inputs.reduce((sum, f) => sum + f.amount, 0)
       if (total > 0) minShare = Math.min(minShare, input.amount / total)
     }

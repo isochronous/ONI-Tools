@@ -39,7 +39,9 @@ function needsOf(s: Step): string[] {
         <span class="to">{{ fmt(loop.steps.slice(0, i + 1).reduce((r, x) => r * x.ratio, 1)) }} {{ label(s.to) }}</span>
       </li>
     </ol>
-    <p v-if="loop.alternatives.length" class="alts">or using {{ loop.alternatives.join(', ') }}</p>
+    <p v-if="loop.alternatives.length" class="alts" :title="loop.alternatives.join(', ')">
+      or using {{ loop.alternatives.slice(0, 6).join(', ') }}<template v-if="loop.alternatives.length > 6"> and {{ loop.alternatives.length - 6 }} more</template>
+    </p>
     <footer v-if="loop.externals.length || loop.byproducts.length">
       <p v-if="loop.externals.length">
         <strong>Also needs</strong> per 1 {{ label(target) }}:
