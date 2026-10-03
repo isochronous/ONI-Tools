@@ -50,6 +50,7 @@ export interface Process {
   dlc: DlcRestriction
   needs: Needs
   /** For crops and diets: wild version yields this fraction and needs no inputs. */
+  /** Throughput of the wild variant relative to the tame one (notes only; kg-per-kg ratios do not change). */
   wildFactor?: number
   /** Human-readable qualifiers shown next to the step. */
   notes: string[]
@@ -76,6 +77,24 @@ function elementDlc(dlc: string): DlcRestriction {
 export function destinationDlc(id: string): DlcRestriction {
   const m = /^DLC(\d)/.exec(id)
   return { requires: m ? [`DLC${m[1]}_ID`] : [], forbids: [] }
+}
+
+/** How a loop step reads: what does the work, and the game mechanism behind it. */
+export function stepLabel(p: Process): string {
+  switch (p.kind) {
+    case 'transition':
+      return p.notes[0] ?? 'phase change'
+    case 'sublimate':
+      return p.via + ' off-gasses'
+    case 'diet':
+      return 'fed to ' + p.via
+    case 'drop':
+      return p.via + ' dies'
+    case 'crop':
+      return p.via + ' harvest'
+    default:
+      return p.via
+  }
 }
 
 export function buildGraph(d: GameData): Graph {
@@ -202,7 +221,7 @@ export function buildGraph(d: GameData): Graph {
           needs: { critter: c.id },
           wildFactor: d.tuning.wildCritterCalorieBurnRatio,
           notes: c.caloriesBurnedPerCycle
-            ? [`eats ${fmt(c.caloriesBurnedPerCycle / diet.caloriesPerKg)} kg/cycle when tame`]
+            ? [`eats ${fmt(c.caloriesBurnedPerCycle / diet.caloriesPerKg)} kg/cycle when tame, ${fmt(c.caloriesBurnedPerCycle * d.tuning.wildCritterCalorieBurnRatio / diet.caloriesPerKg)} wild`]
             : [],
         })
       }
@@ -235,9 +254,22 @@ export function buildGraph(d: GameData): Graph {
         outputs: [{ tag: p.crop.item, amount: p.crop.count }],
         dlc: p.dlc,
         needs: { plant: p.id },
-        wildFactor: d.tuning.wildPlantGrowthModifier,
-        notes: [`every ${fmt(cycles)} cycles when domesticated`],
+        notes: [`every ${fmt(cycles)} cycles when tended`],
         seconds: p.crop.durationSeconds,
+      })
+      // Wild (pip-planted) plants need no irrigation or fertilizer and grow at a fraction of the rate.
+      const wild = d.tuning.wildPlantGrowthModifier
+      add({
+        kind: 'crop',
+        via: `${p.name} (wild)`,
+        viaId: p.id,
+        inputs: [],
+        outputs: [{ tag: p.crop.item, amount: p.crop.count }],
+        dlc: p.dlc,
+        needs: { plant: p.id },
+        wildFactor: wild,
+        notes: [`every ${fmt(cycles / wild)} cycles when wild-planted; needs nothing`],
+        seconds: p.crop.durationSeconds / wild,
       })
       if (p.skilledHarvestBonus) {
         add({ kind: 'harvest-bonus', via: p.name, viaId: p.id, inputs: [], outputs: [{ tag: p.skilledHarvestBonus.tag, amount: p.skilledHarvestBonus.amount }], dlc: p.dlc, needs: { plant: p.id }, notes: ['when harvested by a skilled Duplicant'] })

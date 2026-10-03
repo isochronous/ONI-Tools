@@ -132,14 +132,13 @@ export function computeTiers(d: GameData, graph: Graph, colony: Colony, cluster:
   }
 
   const usable = graph.processes.filter((p) => p.kind !== 'worldgen' && p.kind !== 'geyser' && p.kind !== 'starmap' && !isAvailable(p, colony))
-  const needed = (p: Process) => (p.kind === 'crop' && !colony.domesticated ? [] : p.inputs)
   let changed = true
   while (changed) {
     changed = false
     for (const p of usable) {
       let worst: Tier = 'renewable'
       let feasible = true
-      for (const i of needed(p)) {
+      for (const i of p.inputs) {
         const t = tier.get(i.tag)
         if (t === undefined || t === 'none') {
           feasible = false

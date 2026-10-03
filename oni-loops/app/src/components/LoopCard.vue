@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { label } from '../data/load'
-import { fmt, type Process } from '../model/graph'
+import { fmt, stepLabel } from '../model/graph'
 import { isPositive, type Loop, type Step } from '../model/search'
 import { TIER_LABEL, type Tiers } from '../model/tiers'
 
@@ -9,23 +9,8 @@ const props = defineProps<{ loop: Loop; target: string; tiers: Tiers }>()
 
 const positive = computed(() => isPositive(props.loop))
 
-/** How a step reads: what does the work, and the game mechanism behind it. */
 function how(s: Step): string {
-  const p: Process = s.process
-  switch (p.kind) {
-    case 'transition':
-      return p.notes[0] ?? 'phase change'
-    case 'sublimate':
-      return p.via + ' off-gasses'
-    case 'diet':
-      return 'fed to ' + p.via
-    case 'drop':
-      return p.via + ' dies'
-    case 'crop':
-      return p.via + ' harvest'
-    default:
-      return p.via
-  }
+  return stepLabel(s.process)
 }
 
 function needsOf(s: Step): string[] {

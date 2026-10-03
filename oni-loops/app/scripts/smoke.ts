@@ -13,7 +13,7 @@ const guaranteed = guaranteedGeysers(gameData, cluster)
 console.log(`cluster ${cluster?.name}: worlds ${cluster?.worlds.length}, guaranteed geysers:`, [...guaranteed].map(([k, v]) => `${k} ${v.min}-${v.max} (${v.worlds.join('/')})`).join('; '))
 console.log('random geyser slots:', randomGeyserSlots(gameData, cluster))
 
-const colony: Colony = { dlcs: new Set(gameData.dlcs.map((d) => d.id)), critters: null, domesticated: true, loopFloor: 0.5, cluster: clusterId, geysers: new Set(guaranteed.keys()), primaryShare: 0.8 }
+const colony: Colony = { dlcs: new Set(gameData.dlcs.map((d) => d.id)), critters: null, loopFloor: 0.5, cluster: clusterId, geysers: new Set(guaranteed.keys()), primaryShare: 0.5 }
 const tiers = computeTiers(gameData, graph, colony, cluster, colony.geysers)
 for (const tag of ['Water', 'DirtyWater', 'Sand', 'Wolframite', 'Tungsten', 'Isoresin', 'Niobium', 'Electrum', 'BasicFabric', 'SlimeMold', 'Diamond', 'Plastic', 'Steel'])
   console.log(`  ${label(tag).padEnd(16)} ${TIER_LABEL[tiers.of(tag)].padEnd(28)} ${tiers.reason(tag)}`)

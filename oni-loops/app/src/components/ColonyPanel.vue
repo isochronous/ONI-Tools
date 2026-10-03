@@ -82,18 +82,6 @@ function has(id: string) {
     </div>
 
     <div class="group">
-      <h3>Plants</h3>
-      <label class="check">
-        <input type="radio" name="plants" :checked="store.domesticated" @change="store.domesticated = true" />
-        Domesticated (full yield, needs irrigation and fertilizer)
-      </label>
-      <label class="check">
-        <input type="radio" name="plants" :checked="!store.domesticated" @change="store.domesticated = false" />
-        Wild (¼ yield, needs nothing)
-      </label>
-    </div>
-
-    <div class="group">
       <h3>Loops</h3>
       <label class="slider">
         Show loops that return at least <strong>{{ Math.round(store.loopFloor * 100) }}%</strong>

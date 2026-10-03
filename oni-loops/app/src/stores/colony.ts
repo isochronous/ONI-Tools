@@ -5,11 +5,13 @@ import { DEFAULT_PRIMARY_SHARE, type Colony } from '../model/search'
 import { guaranteedGeysers } from '../model/tiers'
 
 const STORAGE_KEY = 'oni-loops.colony'
+const SAVED_VERSION = 2
 
 interface Saved {
+  /** Bumped when a default changes so stale saved values are dropped. */
+  v?: number
   dlcs: string[]
   critters: string[] | null
-  domesticated: boolean
   loopFloor: number
   cluster: string | null
   /** Geyser types found on the map beyond the guaranteed ones. */
@@ -26,7 +28,7 @@ function load(): Saved | null {
   }
 }
 
-/** What the player's colony has: DLCs, ranchable critters, wild/domestic plants, loop floor. */
+/** What the player's colony has: DLCs, asteroid and geysers, ranchable critters, loop floor. */
 export const useColonyStore = defineStore('colony', () => {
   const saved = load()
   const dlcs = ref(new Set(saved?.dlcs ?? gameData.dlcs.map((d) => d.id)))
@@ -35,10 +37,9 @@ export const useColonyStore = defineStore('colony', () => {
   else dlcs.value.delete(SPACED_OUT)
   /** null = assume any critter is available. */
   const critters = ref<Set<string> | null>(saved?.critters ? new Set(saved.critters) : null)
-  const domesticated = ref(saved?.domesticated ?? true)
   const loopFloor = ref(saved?.loopFloor ?? 0.5)
   const cluster = ref<string | null>(saved?.cluster ?? null)
-  const primaryShare = ref(saved?.primaryShare ?? DEFAULT_PRIMARY_SHARE)
+  const primaryShare = ref(saved?.v === SAVED_VERSION ? (saved.primaryShare ?? DEFAULT_PRIMARY_SHARE) : DEFAULT_PRIMARY_SHARE)
   const extraGeysers = ref(new Set(saved?.extraGeysers ?? []))
 
   const clusterData = computed(() => gameData.clusters.find((c) => c.id === cluster.value) ?? null)
@@ -49,7 +50,6 @@ export const useColonyStore = defineStore('colony', () => {
   const colony = computed<Colony>(() => ({
     dlcs: dlcs.value,
     critters: critters.value,
-    domesticated: domesticated.value,
     loopFloor: loopFloor.value,
     cluster: cluster.value,
     geysers: geysers.value,
@@ -65,7 +65,7 @@ export const useColonyStore = defineStore('colony', () => {
 
   function save(c: Colony) {
     try {
-      const data: Saved = { dlcs: [...c.dlcs], critters: c.critters ? [...c.critters] : null, domesticated: c.domesticated, loopFloor: c.loopFloor, cluster: c.cluster, extraGeysers: [...extraGeysers.value], primaryShare: c.primaryShare }
+      const data: Saved = { v: SAVED_VERSION, dlcs: [...c.dlcs], critters: c.critters ? [...c.critters] : null, loopFloor: c.loopFloor, cluster: c.cluster, extraGeysers: [...extraGeysers.value], primaryShare: c.primaryShare }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     } catch {
       /* storage may be unavailable */
@@ -100,5 +100,5 @@ export const useColonyStore = defineStore('colony', () => {
 
   watch(colony, save, { deep: true })
 
-  return { dlcs, critters, domesticated, loopFloor, primaryShare, cluster, clusterData, guaranteed, extraGeysers, geysers, colony, toggleDlc, setCritter, assumeAllCritters, toggleGeyser }
+  return { dlcs, critters, loopFloor, primaryShare, cluster, clusterData, guaranteed, extraGeysers, geysers, colony, toggleDlc, setCritter, assumeAllCritters, toggleGeyser }
 })
