@@ -1,0 +1,9 @@
+# .NET (dump mod)
+bin/
+obj/
+.vs/
+*.user
+# Node (app)
+node_modules/
+dist/
+*.local
