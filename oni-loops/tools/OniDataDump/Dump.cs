@@ -40,6 +40,7 @@ namespace OniDataDump
 					["secondsPerCycle"] = 600f,
 				},
 				["dlcs"] = new JArray(DlcIds().Select(id => new JObject { ["id"] = id, ["name"] = DlcName(id) })),
+				["names"] = Names(),
 				["elements"] = Elements(),
 				["items"] = Items(),
 				["recipes"] = Recipes(),
@@ -101,6 +102,29 @@ namespace OniDataDump
 		}
 
 		// ---- sections ----
+
+		/// <summary>
+		/// The game's display name for every tag the other sections mention: elements, all
+		/// prefabs (items, critters, plants, eggs), and all buildings (so fabricator ids in
+		/// recipes resolve). The UI shows these, never the ids: "PlantFiber" is "Plant Husk".
+		/// </summary>
+		private static JObject Names()
+		{
+			var names = new JObject();
+			foreach (Element e in ElementLoader.elements)
+				if (e != null && !string.IsNullOrEmpty(e.name))
+					names[e.id.ToString()] = e.name;
+			foreach (KPrefabID id in Assets.Prefabs)
+			{
+				string name = id.gameObject.GetProperName();
+				if (!string.IsNullOrEmpty(name) && names[id.PrefabTag.ToString()] == null)
+					names[id.PrefabTag.ToString()] = name;
+			}
+			foreach (BuildingDef def in Assets.BuildingDefs)
+				if (!string.IsNullOrEmpty(def.Name))
+					names[def.PrefabID] = def.Name;
+			return names;
+		}
 
 		private static JArray Elements()
 		{
@@ -347,7 +371,7 @@ namespace OniDataDump
 					o["fertilizer"] = new JArray(fertilizer.consumedElements.Select(c => new JObject { ["tag"] = c.tag.ToString(), ["rate"] = c.massConsumptionRate }));
 				PlantFiberProducer fiber = prefab.GetComponent<PlantFiberProducer>();
 				if (fiber != null)
-					o["plantFiberOnSkilledHarvest"] = fiber.amount;
+					o["skilledHarvestBonus"] = new JObject { ["tag"] = "PlantFiber", ["amount"] = fiber.amount };
 				SeedProducer seeds = prefab.GetComponent<SeedProducer>();
 				if (seeds != null)
 					o["seed"] = new JObject { ["item"] = seeds.seedInfo.seedId, ["productionType"] = seeds.seedInfo.productionType.ToString(), ["count"] = seeds.seedInfo.newSeedsProduced };
