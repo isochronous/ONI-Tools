@@ -200,6 +200,6 @@ export interface GameData {
   worldgen: WorldData[]
   clusters: ClusterData[]
   spacePois: SpacePoiData[]
-  /** Base-game Starmap destinations; empty when dumped with Spaced Out, absent in older dumps. */
+  /** Base-game Starmap destinations; the import script empties this for a Spaced Out dump, and older dumps lack it. */
   spaceDestinations?: SpaceDestinationData[]
 }

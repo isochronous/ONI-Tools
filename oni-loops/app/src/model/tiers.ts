@@ -126,7 +126,8 @@ export function computeTiers(d: GameData, graph: Graph, colony: Colony, cluster:
 
   // Base game: every Starmap has every destination type somewhere, at some distance.
   for (const s of d.spaceDestinations ?? []) {
-    if (!s.visitable || destinationDlc(s.id).requires.some((id) => !colony.dlcs.has(id))) continue
+    const dlc = destinationDlc(s.id)
+    if (!s.visitable || dlc.requires.some((id) => !colony.dlcs.has(id)) || dlc.forbids.some((id) => colony.dlcs.has(id))) continue
     for (const el of Object.keys(s.elements)) set(el, 'space', `from the ${s.name} by rocket`)
     for (const tag of Object.keys(s.entities)) set(tag, 'space', `from the ${s.name} by rocket`)
   }

@@ -76,7 +76,8 @@ function elementDlc(dlc: string): DlcRestriction {
 /** Content-pack destinations are only in the Db when their pack is on; the id says which. */
 export function destinationDlc(id: string): DlcRestriction {
   const m = /^DLC(\d)/.exec(id)
-  return { requires: m ? [`DLC${m[1]}_ID`] : [], forbids: [] }
+  // Rockets only fly the Starmap without Spaced Out.
+  return { requires: m ? [`DLC${m[1]}_ID`] : [], forbids: ['EXPANSION1_ID'] }
 }
 
 /** How a loop step reads: what does the work, and the game mechanism behind it. */

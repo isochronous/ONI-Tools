@@ -31,6 +31,10 @@ elif set(active) == set(known) - {"EXPANSION1_ID"}:
     flavour = "no-spaced-out"          # the base game plus every content pack
 else:
     flavour = "+".join(x.replace("_ID", "").lower() for x in active)
+# The Db always holds the base game's Starmap destinations, but rockets only visit them
+# without Spaced Out, so they are dropped from a Spaced Out dump.
+if "EXPANSION1_ID" in active:
+    d["spaceDestinations"] = []
 out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "%s-%s.json" % (build, flavour))
 json.dump(d, open(out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
 print("wrote", out, os.path.getsize(out) // 1024, "KB; names like:", d["names"]["PlantFiber"], "/", d["dlcs"][0]["name"])
