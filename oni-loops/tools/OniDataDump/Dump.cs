@@ -153,6 +153,9 @@ namespace OniDataDump
 				Edible edible = prefab.GetComponent<Edible>();
 				if (edible != null)
 					o["calories"] = edible.FoodInfo?.CaloriesPerUnit ?? 0f;
+				Sublimates sublimates = prefab.GetComponent<Sublimates>();
+				if (sublimates != null)
+					o["sublimates"] = new JObject { ["element"] = sublimates.info.sublimatedElement.ToString(), ["rate"] = sublimates.info.sublimationRate };
 				arr.Add(o);
 			}
 			return arr;
@@ -217,6 +220,12 @@ namespace OniDataDump
 				Toilet toilet = go.GetComponent<Toilet>();
 				if (toilet != null)
 					outputs.Add(new JObject { ["tag"] = toilet.solidWastePerUse.elementID.ToString(), ["amountPerUse"] = toilet.solidWastePerUse.mass, ["via"] = "Toilet" });
+				SteamTurbine turbine = go.GetComponent<SteamTurbine>();
+				if (turbine != null)
+				{
+					inputs.Add(new JObject { ["tag"] = turbine.srcElem.ToString(), ["rate"] = turbine.pumpKGRate, ["via"] = "SteamTurbine" });
+					outputs.Add(new JObject { ["tag"] = turbine.destElem.ToString(), ["rate"] = turbine.pumpKGRate, ["via"] = "SteamTurbine" });
+				}
 				FlushToilet flush = go.GetComponent<FlushToilet>();
 				if (flush != null)
 				{
@@ -302,6 +311,9 @@ namespace OniDataDump
 				FertilizationMonitor.Def fertilizer = prefab.GetDef<FertilizationMonitor.Def>();
 				if (fertilizer?.consumedElements != null)
 					o["fertilizer"] = new JArray(fertilizer.consumedElements.Select(c => new JObject { ["tag"] = c.tag.ToString(), ["rate"] = c.massConsumptionRate }));
+				PlantFiberProducer fiber = prefab.GetComponent<PlantFiberProducer>();
+				if (fiber != null)
+					o["plantFiberOnSkilledHarvest"] = fiber.amount;
 				SeedProducer seeds = prefab.GetComponent<SeedProducer>();
 				if (seeds != null)
 					o["seed"] = new JObject { ["item"] = seeds.seedInfo.seedId, ["productionType"] = seeds.seedInfo.productionType.ToString(), ["count"] = seeds.seedInfo.newSeedsProduced };
