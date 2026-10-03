@@ -2,8 +2,9 @@
 import { computed } from 'vue'
 import { label } from '../data/load'
 import { fmt, type Process, type ProcessKind } from '../model/graph'
+import { TIER_LABEL, type Tiers } from '../model/tiers'
 
-const props = defineProps<{ processes: Process[]; target: string; reasons?: Map<string, string> }>()
+const props = defineProps<{ processes: Process[]; target: string; reasons?: Map<string, string>; tiers: Tiers }>()
 
 const KIND_TITLES: Record<ProcessKind, string> = {
   recipe: 'Made in a building',
@@ -56,7 +57,7 @@ function unit(p: Process): string {
             <span class="via">{{ p.via }}</span>
             <span class="io">
               <template v-if="p.inputs.length">
-                <span v-for="(f, i) in p.inputs" :key="f.tag">{{ i ? ' + ' : '' }}{{ fmt(f.amount) }} {{ label(f.tag) }}</span>
+                <span v-for="(f, i) in p.inputs" :key="f.tag" :class="'t-' + tiers.of(f.tag)" :title="TIER_LABEL[tiers.of(f.tag)] + ': ' + tiers.reason(f.tag)">{{ i ? ' + ' : '' }}{{ fmt(f.amount) }} {{ label(f.tag) }}</span>
                 <span class="arrow"> → </span>
               </template>
               <strong>{{ fmt(amountOf(p, target)) }} {{ label(target) }}{{ unit(p) }}</strong>
@@ -109,6 +110,10 @@ li {
 .notes {
   grid-column: 2;
   font-size: 0.8rem;
+}
+.t-space,
+.t-none {
+  text-decoration: underline dotted var(--warn);
 }
 .locked {
   grid-column: 2;

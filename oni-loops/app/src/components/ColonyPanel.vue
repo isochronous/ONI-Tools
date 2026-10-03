@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { gameData } from '../data/load'
 import { useGraph } from '../model'
 import { useColonyStore } from '../stores/colony'
+import { randomGeyserSlots } from '../model/tiers'
 
 const store = useColonyStore()
 const graph = useGraph()
@@ -22,6 +23,23 @@ const critters = computed(() => {
 
 const allIds = computed(() => critters.value.map((c) => c.id))
 
+/** Clusters playable with the chosen DLCs. */
+const clusters = computed(() =>
+  gameData.clusters
+    .filter((c) => c.dlc.requires.every((id) => store.dlcs.has(id)) && !c.dlc.forbids.some((id) => store.dlcs.has(id)))
+    .sort((a, b) => a.name.localeCompare(b.name)),
+)
+const randomSlots = computed(() => randomGeyserSlots(gameData, store.clusterData))
+const geyserTypes = computed(() =>
+  gameData.geysers
+    .filter((g) => g.dlc.requires.every((id) => store.dlcs.has(id)))
+    .map((g) => ({ id: g.id, name: gameData.names['GeyserGeneric_' + g.id] ?? g.id }))
+    .sort((a, b) => a.name.localeCompare(b.name)),
+)
+function geyserName(id: string) {
+  return gameData.names['GeyserGeneric_' + id] ?? id
+}
+
 function has(id: string) {
   return store.critters === null || store.critters.has(id)
 }
@@ -37,6 +55,29 @@ function has(id: string) {
         <input type="checkbox" :checked="store.dlcs.has(d.id)" @change="store.toggleDlc(d.id)" />
         {{ d.name }}
       </label>
+    </div>
+
+    <div class="group">
+      <h3>Asteroid</h3>
+      <select :value="store.cluster ?? ''" @change="store.cluster = ($event.target as HTMLSelectElement).value || null">
+        <option value="">Not chosen (no terrain or geyser knowledge)</option>
+        <option v-for="c in clusters" :key="c.id" :value="c.id">{{ c.name }}</option>
+      </select>
+      <template v-if="store.clusterData">
+        <p v-if="store.guaranteed.size" class="hint">
+          Guaranteed geysers:
+          <span v-for="[id, g] in store.guaranteed" :key="id" class="chip">{{ g.min === g.max ? g.min : g.min + '–' + g.max }}× {{ geyserName(id) }}</span>
+        </p>
+        <p v-if="randomSlots.length" class="hint">
+          Plus {{ randomSlots.map((s) => `${s.count} seed-random on ${s.world}`).join(', ') }}. Tick the ones you have found:
+        </p>
+        <div v-if="randomSlots.length" class="critters">
+          <label v-for="g in geyserTypes" :key="g.id" class="check">
+            <input type="checkbox" :checked="store.geysers.has(g.id)" :disabled="store.guaranteed.has(g.id)" @change="store.toggleGeyser(g.id)" />
+            {{ g.name }}
+          </label>
+        </div>
+      </template>
     </div>
 
     <div class="group">
@@ -58,6 +99,11 @@ function has(id: string) {
         <input v-model.number="store.loopFloor" type="range" min="0" max="1" step="0.05" />
       </label>
       <p class="hint">100% lists only net-positive loops; lower it to see loops whose shortfall you can top up from elsewhere.</p>
+      <label class="slider">
+        Call a loop side-stream when the target is under <strong>{{ Math.round(store.primaryShare * 100) }}%</strong> of what a step consumes
+        <input v-model.number="store.primaryShare" type="range" min="0" max="1" step="0.05" />
+      </label>
+      <p class="hint">Side-stream loops ride along a machine that mostly eats something else (steam into an oil refinery); they are listed last.</p>
     </div>
 
     <div class="group">
@@ -129,6 +175,22 @@ h3 {
   overflow: auto;
   margin-top: 0.4rem;
   padding-right: 0.3rem;
+}
+select {
+  width: 100%;
+  padding: 0.4rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.chip {
+  display: inline-block;
+  margin: 0.1rem 0.2rem 0.1rem 0;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text);
 }
 .link {
   background: none;

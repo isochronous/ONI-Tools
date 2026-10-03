@@ -61,6 +61,8 @@ export interface Graph {
   byOutput: Map<string, Process[]>
   byInput: Map<string, Process[]>
   critters: Map<string, { name: string; dlc: DlcRestriction }>
+  /** Ids of elements that exist in play; their amounts are kilograms. */
+  elements: Set<string>
 }
 
 const NONE: DlcRestriction = { requires: [], forbids: [] }
@@ -257,7 +259,7 @@ export function buildGraph(d: GameData): Graph {
     for (const o of p.outputs) push(byOutput, o.tag, p)
     for (const i of p.inputs) push(byInput, i.tag, p)
   }
-  return { processes, byOutput, byInput, critters }
+  return { processes, byOutput, byInput, critters, elements: elementIds }
 }
 
 function push(map: Map<string, Process[]>, key: string, p: Process) {

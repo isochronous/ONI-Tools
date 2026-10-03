@@ -1,17 +1,28 @@
-import { gameData } from '../src/data/load'
+import { gameData, label } from '../src/data/load'
 import { buildGraph, fmt } from '../src/model/graph'
-import { answer, setDlcNames } from '../src/model/search'
-import { label } from '../src/data/load'
+import { answer, setDlcNames, type Colony } from '../src/model/search'
+import { computeTiers, guaranteedGeysers, randomGeyserSlots, TIER_LABEL } from '../src/model/tiers'
 
 const graph = buildGraph(gameData)
 setDlcNames(Object.fromEntries(gameData.dlcs.map((d) => [d.id, d.name])))
-console.log('processes:', graph.processes.length, 'by kind:', Object.entries(graph.processes.reduce<Record<string, number>>((a, p) => ((a[p.kind] = (a[p.kind] ?? 0) + 1), a), {})).map(([k, v]) => `${k}=${v}`).join(' '))
-const colony = { dlcs: new Set(gameData.dlcs.map((d) => d.id)), critters: null, domesticated: true, loopFloor: 0.5 }
-for (const target of ['Diamond', 'ReedFiber' in gameData.names ? 'ReedFiber' : 'BasicFabric', 'Water', 'Electrum', 'Slime']) {
-  const a = answer(graph, target, colony)
-  console.log(`\n== ${label(target)}: ${a.loops.length} loops, ${a.producers.length} producers, ${a.locked.length} locked`)
-  for (const loop of a.loops.slice(0, 3)) {
-    console.log(`  loop x${fmt(loop.ratio)}: ` + loop.steps.map((s) => `${label(s.from)} -[${s.process.via}]-> ${fmt(s.ratio)} ${label(s.to)}`).join(' ; '))
+console.log('processes:', graph.processes.length)
+
+const clusterId = process.argv[2] ?? 'clusters/SandstoneDefault'
+const cluster = gameData.clusters.find((c) => c.id === clusterId) ?? null
+const guaranteed = guaranteedGeysers(gameData, cluster)
+console.log(`cluster ${cluster?.name}: worlds ${cluster?.worlds.length}, guaranteed geysers:`, [...guaranteed].map(([k, v]) => `${k} ${v.min}-${v.max} (${v.worlds.join('/')})`).join('; '))
+console.log('random geyser slots:', randomGeyserSlots(gameData, cluster))
+
+const colony: Colony = { dlcs: new Set(gameData.dlcs.map((d) => d.id)), critters: null, domesticated: true, loopFloor: 0.5, cluster: clusterId, geysers: new Set(guaranteed.keys()), primaryShare: 0.8 }
+const tiers = computeTiers(gameData, graph, colony, cluster, colony.geysers)
+for (const tag of ['Water', 'DirtyWater', 'Sand', 'Wolframite', 'Tungsten', 'Isoresin', 'Niobium', 'Electrum', 'BasicFabric', 'SlimeMold', 'Diamond', 'Plastic', 'Steel'])
+  console.log(`  ${label(tag).padEnd(16)} ${TIER_LABEL[tiers.of(tag)].padEnd(28)} ${tiers.reason(tag)}`)
+
+for (const target of ['Diamond', 'BasicFabric', 'TempConductorSolid', 'Water']) {
+  const a = answer(graph, target, colony, tiers)
+  console.log(`\n== ${label(target)}: ${a.loops.length} loops shown, ${a.hiddenCycles} hidden, ${a.producers.length} producers, ${a.locked.length} locked`)
+  for (const loop of a.loops.slice(0, 4)) {
+    console.log(`  x${fmt(loop.ratio)} ${loop.primary ? 'primary' : 'side-stream(' + fmt(loop.minShare * 100) + '%)'} worst=${loop.worstTier}: ` + loop.steps.map((s) => `${label(s.from)} -[${s.process.via}]-> ${label(s.to)}`).join(' ; '))
+    if (loop.externals.length) console.log('      needs: ' + loop.externals.slice(0, 4).map((f) => `${fmt(f.amount)} ${label(f.tag)} [${tiers.of(f.tag)}]`).join(', '))
   }
-  for (const p of a.producers.slice(0, 6)) console.log(`  ${p.kind.padEnd(10)} ${p.via}: ${p.inputs.map((f) => `${fmt(f.amount)} ${label(f.tag)}`).join(' + ') || '(source)'} -> ${p.outputs.map((f) => `${fmt(f.amount)} ${label(f.tag)}`).join(', ')}  ${p.notes.join('; ')}`)
 }

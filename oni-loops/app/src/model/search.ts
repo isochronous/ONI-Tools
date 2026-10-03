@@ -1,4 +1,5 @@
 import type { Flow, Graph, Process } from './graph'
+import { TIER_ORDER, type Tier, type Tiers } from './tiers'
 
 /** What the player's colony has access to. */
 export interface Colony {
@@ -13,7 +14,19 @@ export interface Colony {
    * cheap to cover from another source.
    */
   loopFloor: number
+  /** Cluster id the colony plays on, or null when unknown. */
+  cluster: string | null
+  /** Geyser type ids ("molten_iron") the colony has access to. */
+  geysers: Set<string>
+  /**
+   * Smallest share of a process's input mass the carried resource may have at any step for
+   * the loop to count as primary (the target is what the loop is about). Below it the loop
+   * is a side-stream: the target rides along a process that mostly eats something else.
+   */
+  primaryShare: number
 }
+
+export const DEFAULT_PRIMARY_SHARE = 0.8
 
 export interface Step {
   process: Process
@@ -36,6 +49,18 @@ export interface Loop {
   externals: Flow[]
   /** Useful things the chain makes besides the target, per unit of target put in. */
   byproducts: Flow[]
+  /**
+   * True when, at every step, the carried resource is at least PRIMARY_SHARE of the mass the
+   * process consumes. Otherwise the target only rides along a process that mostly eats
+   * something else (steam into an oil refinery), and the loop is a side-stream.
+   */
+  primary: boolean
+  /** Lowest share seen along the chain. */
+  minShare: number
+  /** The hardest-to-get external input's tier; 'renewable' when there are none. */
+  worstTier: Tier
+  /** Other processes that do the same step (another fabricator, another kiln). */
+  alternatives: string[]
 }
 
 export interface Answer {
@@ -80,9 +105,12 @@ function stepRatio(p: Process, from: string, to: string, colony: Colony): number
  * processes the colony can run. Only mass-carrying edges are followed (a process with no
  * inputs cannot sit inside a loop; it is a source instead).
  */
-export function findLoops(graph: Graph, target: string, colony: Colony, maxSteps = 6, maxLoops = 50): Loop[] {
+export function findLoops(graph: Graph, target: string, colony: Colony, tiers: Tiers, maxSteps = 6, maxLoops = 50): Loop[] {
   const loops: Loop[] = []
   const seen = new Set<string>()
+  // One loop per sequence of resources; variants that only swap the machine or critter
+  // doing a step are folded into `alternatives` of the best-returning one.
+  const byPath = new Map<string, Loop>()
 
   function walk(current: string, steps: Step[], ratio: number, visited: Set<string>) {
     if (loops.length >= maxLoops) return
@@ -98,7 +126,25 @@ export function findLoops(graph: Graph, target: string, colony: Colony, maxSteps
           const key = [...steps, step].map((s) => s.process.id).join('>')
           if (seen.has(key)) continue
           seen.add(key)
-          loops.push(summarise([...steps, step], ratio * r, target, colony))
+          const loop = summarise(graph, [...steps, step], ratio * r, target, colony, tiers)
+          const path = loop.steps.map((s) => s.to).join('>')
+          const existing = byPath.get(path)
+          if (!existing) {
+            byPath.set(path, loop)
+            loops.push(loop)
+          } else {
+            const [best, other] = existing.ratio >= loop.ratio ? [existing, loop] : [loop, existing]
+            for (let i = 0; i < best.steps.length; i++) {
+              const a = best.steps[i]!.process.via
+              const b = other.steps[i]!.process.via
+              if (a !== b && !best.alternatives.includes(b)) best.alternatives.push(b)
+            }
+            if (best !== existing) {
+              best.alternatives.push(...existing.alternatives.filter((x) => !best.alternatives.includes(x)))
+              byPath.set(path, best)
+              loops[loops.indexOf(existing)] = best
+            }
+          }
           continue
         }
         if (steps.length + 1 >= maxSteps || visited.has(out.tag)) continue
@@ -113,10 +159,18 @@ export function findLoops(graph: Graph, target: string, colony: Colony, maxSteps
   return loops.sort(compareLoops)
 }
 
-/** Net-positive before top-up; within a tier, self-contained first, then by return, then shorter. */
+/**
+ * Easiest externals first (a loop needing only Sand beats one needing Isoresin), then
+ * net-positive before top-up, primary before side-stream, then by return, then shorter.
+ */
 export function compareLoops(a: Loop, b: Loop): number {
-  const tier = Number(isPositive(b)) - Number(isPositive(a))
-  return tier || a.externals.length - b.externals.length || b.ratio - a.ratio || a.steps.length - b.steps.length
+  return (
+    TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
+    Number(isPositive(b)) - Number(isPositive(a)) ||
+    Number(b.primary) - Number(a.primary) ||
+    b.ratio - a.ratio ||
+    a.steps.length - b.steps.length
+  )
 }
 
 /** True when the chain nets more target than it consumes. */
@@ -129,15 +183,21 @@ export function isPositive(loop: Loop): boolean {
  * chain: what the chain consumes but never makes is an external input; what it makes but
  * never consumes (other than the target) is a byproduct.
  */
-function summarise(steps: Step[], ratio: number, target: string, colony: Colony): Loop {
+function summarise(graph: Graph, steps: Step[], ratio: number, target: string, colony: Colony, tiers: Tiers): Loop {
   const net = new Map<string, number>()
   let carried = 1 // units of the current step's `from` per unit of target
+  let minShare = 1
   for (const s of steps) {
     const input = s.process.inputs.find((f) => f.tag === s.from)
     const runs = input && input.amount > 0 ? carried / input.amount : 0
     const scale = !colony.domesticated && s.process.wildFactor ? s.process.wildFactor : 1
     for (const f of s.process.inputs) net.set(f.tag, (net.get(f.tag) ?? 0) - f.amount * runs)
     for (const f of s.process.outputs) net.set(f.tag, (net.get(f.tag) ?? 0) + f.amount * runs * scale)
+    // Mass share of the carried input, when every input is an element (so kg compares to kg).
+    if (input && s.process.inputs.every((f) => graph.elements.has(f.tag))) {
+      const total = s.process.inputs.reduce((sum, f) => sum + f.amount, 0)
+      if (total > 0) minShare = Math.min(minShare, input.amount / total)
+    }
     carried *= s.ratio
   }
   const externals: Flow[] = []
@@ -149,10 +209,15 @@ function summarise(steps: Step[], ratio: number, target: string, colony: Colony)
   }
   externals.sort((a, b) => b.amount - a.amount)
   byproducts.sort((a, b) => b.amount - a.amount)
-  return { steps, ratio, externals, byproducts }
+  let worstTier: Tier = 'renewable'
+  for (const f of externals) {
+    const tier = tiers.of(f.tag)
+    if (TIER_ORDER[tier] > TIER_ORDER[worstTier]) worstTier = tier
+  }
+  return { steps, ratio, externals, byproducts, primary: minShare >= colony.primaryShare, minShare, worstTier, alternatives: [] }
 }
 
-export function answer(graph: Graph, target: string, colony: Colony): Answer {
+export function answer(graph: Graph, target: string, colony: Colony, tiers: Tiers): Answer {
   const all = graph.byOutput.get(target) ?? []
   const producers: Process[] = []
   const locked: { process: Process; reason: string }[] = []
@@ -163,7 +228,7 @@ export function answer(graph: Graph, target: string, colony: Colony): Answer {
   }
   const order: Record<string, number> = { recipe: 0, converter: 1, diet: 2, crop: 3, shear: 4, egg: 5, grow: 6, drop: 7, seed: 8, 'harvest-bonus': 9, transition: 10, sublimate: 11, geyser: 12, worldgen: 13 }
   producers.sort((a, b) => (order[a.kind] ?? 99) - (order[b.kind] ?? 99) || a.via.localeCompare(b.via))
-  const cycles = findLoops(graph, target, colony, 6, 200)
+  const cycles = findLoops(graph, target, colony, tiers, 6, 200)
   const loops = cycles.filter((l) => l.ratio >= colony.loopFloor)
   return { target, loops, hiddenCycles: cycles.length - loops.length, producers, locked }
 }

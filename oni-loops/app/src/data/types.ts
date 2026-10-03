@@ -126,12 +126,47 @@ export interface GeyserData {
   maxRatePerCycle: number
 }
 
+export interface GeyserRule {
+  ruleId: string
+  /** GuaranteeOne, GuaranteeSome, GuaranteeSomeTryMore, GuaranteeAll, GuaranteeRange, TryOne, TrySome, ... */
+  listRule: string
+  someCount: number
+  moreCount: number
+  rangeMin: number
+  rangeMax: number
+  times: number
+  /** Each template and the geyser prefabs it contains ("GeyserGeneric_molten_iron"; plain "GeyserGeneric" = seed-random type). */
+  templates: { template: string; geysers: string[] }[]
+}
+
 export interface WorldData {
   world: string
   name: string
   dlc: DlcRestriction
   biomes: string[]
   elements: string[]
+  geyserRules: GeyserRule[]
+}
+
+export interface ClusterData {
+  id: string
+  name: string
+  dlc: DlcRestriction
+  startWorldIndex: number
+  /** World ids, as in WorldData.world. */
+  worlds: string[]
+  spacePois: { pois: string[]; numToSpawn: number; guarantee: boolean }[]
+}
+
+export interface SpacePoiData {
+  id: string
+  dlc: DlcRestriction
+  /** Element id -> relative weight of the POI's mass. */
+  elements: Record<string, number>
+  capacityMin: number
+  capacityMax: number
+  rechargeMin: number
+  rechargeMax: number
 }
 
 export interface GameData {
@@ -147,4 +182,6 @@ export interface GameData {
   plants: PlantData[]
   geysers: GeyserData[]
   worldgen: WorldData[]
+  clusters: ClusterData[]
+  spacePois: SpacePoiData[]
 }

@@ -3,8 +3,9 @@ import { computed } from 'vue'
 import { label } from '../data/load'
 import { fmt, type Process } from '../model/graph'
 import { isPositive, type Loop, type Step } from '../model/search'
+import { TIER_LABEL, type Tiers } from '../model/tiers'
 
-const props = defineProps<{ loop: Loop; target: string }>()
+const props = defineProps<{ loop: Loop; target: string; tiers: Tiers }>()
 
 const positive = computed(() => isPositive(props.loop))
 
@@ -38,6 +39,7 @@ function needsOf(s: Step): string[] {
     <header>
       <span class="ratio">×{{ fmt(loop.ratio) }}</span>
       <span class="tier">{{ positive ? 'net-positive loop' : 'top-up loop' }}</span>
+      <span v-if="!loop.primary" class="side" :title="`At one step ${label(target)}'s share of what the machine eats is only ${fmt(loop.minShare * 100)}%; the rest is the real cost.`">side-stream</span>
       <span v-if="!positive" class="shortfall">returns {{ fmt(loop.ratio) }} per 1 {{ label(target) }}; top up {{ fmt(1 - loop.ratio) }} elsewhere</span>
     </header>
     <ol class="chain">
@@ -52,10 +54,11 @@ function needsOf(s: Step): string[] {
         <span class="to">{{ fmt(loop.steps.slice(0, i + 1).reduce((r, x) => r * x.ratio, 1)) }} {{ label(s.to) }}</span>
       </li>
     </ol>
+    <p v-if="loop.alternatives.length" class="alts">or using {{ loop.alternatives.join(', ') }}</p>
     <footer v-if="loop.externals.length || loop.byproducts.length">
       <p v-if="loop.externals.length">
         <strong>Also needs</strong> per 1 {{ label(target) }}:
-        <span v-for="f in loop.externals" :key="f.tag" class="chip">{{ fmt(f.amount) }} {{ label(f.tag) }}</span>
+        <span v-for="f in loop.externals" :key="f.tag" class="chip" :class="'t-' + tiers.of(f.tag)" :title="tiers.reason(f.tag)">{{ fmt(f.amount) }} {{ label(f.tag) }} <em>{{ TIER_LABEL[tiers.of(f.tag)] }}</em></span>
       </p>
       <p v-if="loop.byproducts.length">
         <strong>Also makes</strong>:
@@ -147,5 +150,27 @@ footer p {
 }
 .chip.plus {
   background: rgba(80, 200, 120, 0.15);
+}
+.chip em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-left: 0.2rem;
+}
+.chip.t-space,
+.chip.t-none {
+  outline: 1px solid var(--warn);
+}
+.side {
+  font-size: 0.75rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  color: var(--warn);
+}
+.alts {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
 </style>
