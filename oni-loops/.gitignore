@@ -7,3 +7,5 @@ obj/
 node_modules/
 dist/
 *.local
+# raw game dumps are backed up here but not tracked; data/<build>-<dlcs>.json is the imported copy
+data/raw-*.json

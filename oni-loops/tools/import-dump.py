@@ -20,6 +20,10 @@ def clean(v):
 d = clean(json.load(open(src, encoding="utf-8")))
 build = d["game"]["build"].split()[0]          # e.g. U59-744825-SCRPAND -> U59-744825
 build = "-".join(build.split("-")[:2])
-out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", build + ".json")
+# One file per build and DLC set: "all-dlcs" when every DLC is on, else the short ids joined.
+active = d["game"]["activeDlcs"]
+known = [x["id"] for x in d["dlcs"]]
+flavour = "all-dlcs" if set(active) >= set(known) else ("base" if not active else "+".join(x.replace("_ID", "").lower() for x in active))
+out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "%s-%s.json" % (build, flavour))
 json.dump(d, open(out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
 print("wrote", out, os.path.getsize(out) // 1024, "KB; names like:", d["names"]["PlantFiber"], "/", d["dlcs"][0]["name"])
