@@ -24,6 +24,7 @@ export type ProcessKind =
   | 'sublimate' // element or item off-gasses
   | 'geyser' // vent/geyser output
   | 'worldgen' // found in an asteroid's terrain
+  | 'starmap' // brought back by a base-game rocket from a Starmap destination
 
 export interface Flow {
   tag: string
@@ -69,6 +70,12 @@ const NONE: DlcRestriction = { requires: [], forbids: [] }
 
 function elementDlc(dlc: string): DlcRestriction {
   return dlc ? { requires: [dlc], forbids: [] } : NONE
+}
+
+/** Content-pack destinations are only in the Db when their pack is on; the id says which. */
+export function destinationDlc(id: string): DlcRestriction {
+  const m = /^DLC(d)/.exec(id)
+  return { requires: m ? [`DLC${m[1]}_ID`] : [], forbids: [] }
 }
 
 export function buildGraph(d: GameData): Graph {
@@ -251,6 +258,18 @@ export function buildGraph(d: GameData): Graph {
       if (!elementIds.has(el)) continue
       add({ kind: 'worldgen', via: worldName(w.name), viaId: w.world, inputs: [], outputs: [{ tag: el, amount: 1 }], dlc: w.dlc, needs: {}, notes: ['in the terrain'] })
     }
+  }
+  // Base game only: the Starmap's destinations. Cargo is split between a destination's
+  // elements by weights rolled once per destination, so each is roughly an equal share.
+  for (const s of d.spaceDestinations ?? []) {
+    if (!s.visitable) continue
+    const dlc = destinationDlc(s.id)
+    const elements = Object.keys(s.elements).filter((el) => elementIds.has(el))
+    const share = elements.length ? `about 1/${elements.length} of each cargo load` : ''
+    const recharge = s.cyclesToRecover ? `${fmt(s.massToRecover)} kg restored over ${s.cyclesToRecover} cycles` : ''
+    const notes = [share, recharge].filter(Boolean)
+    for (const el of elements) add({ kind: 'starmap', via: s.name, viaId: s.id, inputs: [], outputs: [{ tag: el, amount: 1 }], dlc, needs: {}, notes })
+    for (const [tag, count] of Object.entries(s.entities)) add({ kind: 'starmap', via: s.name, viaId: s.id, inputs: [], outputs: [{ tag, amount: count }], dlc, needs: {}, notes: [`${count} per trip`] })
   }
 
   const byOutput = new Map<string, Process[]>()

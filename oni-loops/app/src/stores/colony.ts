@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { gameData } from '../data/load'
+import { chooseDataSet, dataSet, gameData, SPACED_OUT } from '../data/load'
 import { DEFAULT_PRIMARY_SHARE, type Colony } from '../model/search'
 import { guaranteedGeysers } from '../model/tiers'
 
@@ -30,6 +30,9 @@ function load(): Saved | null {
 export const useColonyStore = defineStore('colony', () => {
   const saved = load()
   const dlcs = ref(new Set(saved?.dlcs ?? gameData.dlcs.map((d) => d.id)))
+  // The loaded data set decides Spaced Out; the saved flag may be stale.
+  if (dataSet.spacedOut) dlcs.value.add(SPACED_OUT)
+  else dlcs.value.delete(SPACED_OUT)
   /** null = assume any critter is available. */
   const critters = ref<Set<string> | null>(saved?.critters ? new Set(saved.critters) : null)
   const domesticated = ref(saved?.domesticated ?? true)
@@ -60,11 +63,28 @@ export const useColonyStore = defineStore('colony', () => {
     extraGeysers.value = next
   }
 
+  function save(c: Colony) {
+    try {
+      const data: Saved = { dlcs: [...c.dlcs], critters: c.critters ? [...c.critters] : null, domesticated: c.domesticated, loopFloor: c.loopFloor, cluster: c.cluster, extraGeysers: [...extraGeysers.value], primaryShare: c.primaryShare }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    } catch {
+      /* storage may be unavailable */
+    }
+  }
+
   function toggleDlc(id: string) {
     const next = new Set(dlcs.value)
     if (next.has(id)) next.delete(id)
     else next.add(id)
     dlcs.value = next
+    if (id === SPACED_OUT) {
+      // Spaced Out is a different data set (clusters and rocket POIs instead of one asteroid
+      // and the Starmap), so the page reloads with the other dump. Asteroid ids differ too.
+      cluster.value = null
+      chooseDataSet(next.has(id))
+      save(colony.value)
+      location.reload()
+    }
   }
 
   function setCritter(id: string, available: boolean, all: string[]) {
@@ -78,18 +98,7 @@ export const useColonyStore = defineStore('colony', () => {
     critters.value = null
   }
 
-  watch(
-    colony,
-    (c) => {
-      try {
-        const data: Saved = { dlcs: [...c.dlcs], critters: c.critters ? [...c.critters] : null, domesticated: c.domesticated, loopFloor: c.loopFloor, cluster: c.cluster, extraGeysers: [...extraGeysers.value], primaryShare: c.primaryShare }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-      } catch {
-        /* storage may be unavailable */
-      }
-    },
-    { deep: true },
-  )
+  watch(colony, save, { deep: true })
 
   return { dlcs, critters, domesticated, loopFloor, primaryShare, cluster, clusterData, guaranteed, extraGeysers, geysers, colony, toggleDlc, setCritter, assumeAllCritters, toggleGeyser }
 })

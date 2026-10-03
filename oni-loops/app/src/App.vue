@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
-import { gameData } from './data/load'
+import { dataSet, gameData } from './data/load'
 </script>
 
 <template>
   <header class="top">
     <h1><RouterLink to="/">ONI Loops</RouterLink></h1>
-    <span class="sub">How can I get more of this? · game data {{ gameData.game.build.split('-').slice(0, 2).join('-') }}</span>
+    <span class="sub">How can I get more of this? · game data {{ gameData.game.build.split('-').slice(0, 2).join('-') }}, {{ dataSet.name }}</span>
   </header>
   <RouterView />
   <footer class="bottom">

@@ -55,6 +55,7 @@ function has(id: string) {
         <input type="checkbox" :checked="store.dlcs.has(d.id)" @change="store.toggleDlc(d.id)" />
         {{ d.name }}
       </label>
+      <p class="hint">Spaced Out! is a different game: one asteroid and the Starmap without it, a cluster with rocket mining otherwise. Toggling it reloads with the matching game data.</p>
     </div>
 
     <div class="group">

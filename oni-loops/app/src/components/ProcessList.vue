@@ -21,6 +21,7 @@ const KIND_TITLES: Record<ProcessKind, string> = {
   sublimate: 'Off-gassing',
   geyser: 'Geysers and vents',
   worldgen: 'In the terrain of',
+  starmap: 'Brought back by rockets from',
 }
 
 const groups = computed(() => {
@@ -50,8 +51,9 @@ function unit(p: Process): string {
       <h3>{{ KIND_TITLES[kind] }}</h3>
       <ul>
         <li v-for="p in list" :key="p.id">
-          <template v-if="kind === 'worldgen'">
+          <template v-if="kind === 'worldgen' || kind === 'starmap'">
             <span class="via">{{ p.via }}</span>
+            <span v-if="kind === 'starmap'" class="notes">{{ p.notes.join(' · ') }}</span>
           </template>
           <template v-else>
             <span class="via">{{ p.via }}</span>

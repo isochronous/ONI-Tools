@@ -482,7 +482,7 @@ namespace OniDataDump
 
 		/// <summary>
 		/// Base-game rocket destinations (the Starmap without Spaced Out): each type's element
-		/// table (fraction ranges of the recovered mass), recoverable entities, and recharge.
+		/// table (weight ranges the cargo is split by), recoverable entities, and recharge.
 		/// Spaced Out replaces these with clusters and harvestable POIs.
 		/// </summary>
 		private static JArray SpaceDestinations()

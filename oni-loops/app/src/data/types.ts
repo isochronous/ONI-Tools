@@ -168,7 +168,7 @@ export interface SpaceDestinationData {
   massToRecover: number
   minMass: number
   maxMass: number
-  /** Element id -> fraction range of the recovered mass. */
+  /** Element id -> weight range; each trip's cargo is split between the elements in proportion to a per-destination roll of these weights. */
   elements: Record<string, { min: number; max: number }>
   /** Prefab id -> count of critters or seeds recoverable per trip. */
   entities: Record<string, number>

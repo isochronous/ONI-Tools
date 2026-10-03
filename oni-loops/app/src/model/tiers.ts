@@ -1,5 +1,5 @@
 import type { ClusterData, GameData, WorldData } from '../data/types'
-import type { Graph, Process } from './graph'
+import { destinationDlc, type Graph, type Process } from './graph'
 import type { Colony } from './search'
 import { isAvailable } from './search'
 
@@ -124,7 +124,14 @@ export function computeTiers(d: GameData, graph: Graph, colony: Colony, cluster:
       }
   }
 
-  const usable = graph.processes.filter((p) => p.kind !== 'worldgen' && p.kind !== 'geyser' && !isAvailable(p, colony))
+  // Base game: every Starmap has every destination type somewhere, at some distance.
+  for (const s of d.spaceDestinations ?? []) {
+    if (!s.visitable || destinationDlc(s.id).requires.some((id) => !colony.dlcs.has(id))) continue
+    for (const el of Object.keys(s.elements)) set(el, 'space', `from the ${s.name} by rocket`)
+    for (const tag of Object.keys(s.entities)) set(tag, 'space', `from the ${s.name} by rocket`)
+  }
+
+  const usable = graph.processes.filter((p) => p.kind !== 'worldgen' && p.kind !== 'geyser' && p.kind !== 'starmap' && !isAvailable(p, colony))
   const needed = (p: Process) => (p.kind === 'crop' && !colony.domesticated ? [] : p.inputs)
   let changed = true
   while (changed) {
