@@ -51,6 +51,8 @@ namespace OniDataDump
 				["plants"] = Plants(),
 				["geysers"] = Geysers(),
 				["worldgen"] = Worldgen(),
+				["clusters"] = Clusters(),
+				["spacePois"] = SpacePois(),
 			};
 			File.WriteAllText(path, root.ToString(Formatting.Indented));
 		}
@@ -404,6 +406,101 @@ namespace OniDataDump
 		}
 
 		/// <summary>
+		/// A world's template spawn rules that place geysers, vents, or volcanoes, with the
+		/// geyser prefabs each named template contains, so the app knows which geyser types a
+		/// world is guaranteed (GuaranteeX rules) or may get (TryX rules), and how many. The
+		/// generic random geysers ("geysers/generic") are reported as such; their types are
+		/// decided by the seed.
+		/// </summary>
+		private static JArray GeyserRules(ProcGen.World world)
+		{
+			var arr = new JArray();
+			foreach (var rule in world.worldTemplateRules ?? new List<ProcGen.World.TemplateSpawnRules>())
+			{
+				var templates = new JArray();
+				foreach (string name in rule.names ?? new List<string>())
+				{
+					var geysers = new JArray();
+					if (name == "geysers/generic")
+						geysers.Add("GeyserGeneric");
+					else
+					{
+						TemplateContainer template = null;
+						try { template = TemplateCache.GetTemplate(name); } catch { }
+						if (template != null)
+						{
+							foreach (var prefab in (template.otherEntities ?? new List<TemplateClasses.Prefab>()).Concat(template.buildings ?? new List<TemplateClasses.Prefab>()))
+								if (prefab.id != null && (prefab.id.StartsWith("GeyserGeneric") || prefab.id.Contains("Geyser") || prefab.id.Contains("Volcano") || prefab.id.Contains("Vent")))
+									geysers.Add(prefab.id);
+						}
+					}
+					if (geysers.Count > 0)
+						templates.Add(new JObject { ["template"] = name, ["geysers"] = geysers });
+				}
+				if (templates.Count == 0)
+					continue;
+				arr.Add(new JObject
+				{
+					["ruleId"] = rule.ruleId ?? "",
+					["listRule"] = rule.listRule.ToString(),
+					["someCount"] = rule.someCount,
+					["moreCount"] = rule.moreCount,
+					["rangeMin"] = rule.range.x,
+					["rangeMax"] = rule.range.y,
+					["times"] = rule.times,
+					["templates"] = templates,
+				});
+			}
+			return arr;
+		}
+
+		/// <summary>Clusters (the "which asteroid" choice): their worlds, which one you start on, and their space POIs.</summary>
+		private static JArray Clusters()
+		{
+			var arr = new JArray();
+			foreach (var kv in ProcGen.SettingsCache.clusterLayouts.clusterCache)
+			{
+				var c = kv.Value;
+				arr.Add(new JObject
+				{
+					["id"] = kv.Key,
+					["name"] = Plain(Strings.Get(c.name)),
+					["dlc"] = Restrictions(c),
+					["startWorldIndex"] = c.startWorldIndex,
+					["worlds"] = new JArray((c.worldPlacements ?? new List<ProcGen.WorldPlacement>()).Select(w => w.world)),
+					["spacePois"] = new JArray((c.poiPlacements ?? new List<ProcGen.SpaceMapPOIPlacement>()).Select(p => new JObject
+					{
+						["pois"] = new JArray(p.pois ?? new List<string>()),
+						["numToSpawn"] = p.numToSpawn,
+						["guarantee"] = p.guarantee,
+					})),
+				});
+			}
+			return arr;
+		}
+
+		/// <summary>Harvestable space POIs (asteroid fields): what rocket missions can mine from them.</summary>
+		private static JArray SpacePois()
+		{
+			var arr = new JArray();
+			var types = AccessTools.Field(typeof(HarvestablePOIConfigurator), "_poiTypes")?.GetValue(null) as List<HarvestablePOIConfigurator.HarvestablePOIType>;
+			foreach (var p in types ?? new List<HarvestablePOIConfigurator.HarvestablePOIType>())
+			{
+				arr.Add(new JObject
+				{
+					["id"] = p.id,
+					["dlc"] = Restrictions(p),
+					["elements"] = new JObject(p.harvestableElements.Select(e => new JProperty(e.Key.ToString(), e.Value))),
+					["capacityMin"] = p.poiCapacityMin,
+					["capacityMax"] = p.poiCapacityMax,
+					["rechargeMin"] = p.poiRechargeMin,
+					["rechargeMax"] = p.poiRechargeMax,
+				});
+			}
+			return arr;
+		}
+
+		/// <summary>
 		/// Which worlds (asteroids) place each element in their terrain, via the worldgen cache:
 		/// world -> subworld files -> biomes -> element bands. Worlds carry the DLC they belong
 		/// to. Templates (POIs) and geysers are not included here.
@@ -437,6 +534,7 @@ namespace OniDataDump
 					["dlc"] = Restrictions(world.Value),
 					["biomes"] = new JArray(biomes.OrderBy(b => b)),
 					["elements"] = new JArray(elements.OrderBy(e => e)),
+					["geyserRules"] = GeyserRules(world.Value),
 				});
 			}
 			return arr;
