@@ -38,6 +38,8 @@ namespace OniDataDump
 					["wildCritterCalorieBurnRatio"] = TUNING.CREATURES.WILD_CALORIE_BURN_RATIO,
 					["wildCritterGrowthModifier"] = TUNING.CREATURES.WILD_GROWTH_RATE_MODIFIER,
 					["secondsPerCycle"] = 600f,
+					// The sim only changes phase this many kelvin past lowTemp / highTemp.
+					["stateTransitionBufferK"] = SimMessages.STATE_TRANSITION_TEMPERATURE_BUFER,
 				},
 				["dlcs"] = new JArray(DlcIds().Select(id => new JObject { ["id"] = id, ["name"] = DlcName(id) })),
 				["names"] = Names(),

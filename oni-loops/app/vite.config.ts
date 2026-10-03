@@ -8,6 +8,8 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 export default defineConfig({
   // Served from https://isochronous.github.io/oni-loops/
   base: '/oni-loops/',
+  // The game data lives one level above the app.
+  server: { fs: { allow: ['..'] } },
   plugins: [
     vue(),
     vueDevTools(),
