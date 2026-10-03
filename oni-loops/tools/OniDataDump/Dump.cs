@@ -62,7 +62,7 @@ namespace OniDataDump
 
 		private static string DlcName(string id)
 		{
-			try { return DlcManager.GetDlcTitle(id); }
+			try { return Plain(DlcManager.GetDlcTitle(id)); }
 			catch { return id; }
 		}
 
@@ -90,10 +90,10 @@ namespace OniDataDump
 			};
 		}
 
-		private static string Name(Tag tag)
+		/// <summary>Display text without Klei's rich-text markup (link, colour, italics).</summary>
+		private static string Plain(string text)
 		{
-			string name = tag.ProperName();
-			return string.IsNullOrEmpty(name) ? tag.ToString() : name;
+			return string.IsNullOrEmpty(text) ? text : System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "").Trim();
 		}
 
 		private static JObject Amount(Tag tag, float amount)
@@ -113,16 +113,16 @@ namespace OniDataDump
 			var names = new JObject();
 			foreach (Element e in ElementLoader.elements)
 				if (e != null && !string.IsNullOrEmpty(e.name))
-					names[e.id.ToString()] = e.name;
+					names[e.id.ToString()] = Plain(e.name);
 			foreach (KPrefabID id in Assets.Prefabs)
 			{
-				string name = id.gameObject.GetProperName();
+				string name = Plain(id.gameObject.GetProperName());
 				if (!string.IsNullOrEmpty(name) && names[id.PrefabTag.ToString()] == null)
 					names[id.PrefabTag.ToString()] = name;
 			}
 			foreach (BuildingDef def in Assets.BuildingDefs)
 				if (!string.IsNullOrEmpty(def.Name))
-					names[def.PrefabID] = def.Name;
+					names[def.PrefabID] = Plain(def.Name);
 			return names;
 		}
 
@@ -136,7 +136,7 @@ namespace OniDataDump
 				var o = new JObject
 				{
 					["id"] = e.id.ToString(),
-					["name"] = e.name,
+					["name"] = Plain(e.name),
 					["state"] = e.IsSolid ? "solid" : e.IsLiquid ? "liquid" : e.IsGas ? "gas" : "other",
 					["dlc"] = e.dlcId ?? "",
 					["disabled"] = e.disabled,
@@ -174,7 +174,7 @@ namespace OniDataDump
 				var o = new JObject
 				{
 					["id"] = id.PrefabTag.ToString(),
-					["name"] = prefab.GetProperName(),
+					["name"] = Plain(prefab.GetProperName()),
 					["tags"] = new JArray(id.Tags.Select(t => t.ToString())),
 					["dlc"] = Restrictions(id),
 					["kind"] = prefab.GetComponent<Edible>() != null ? "food"
@@ -271,7 +271,7 @@ namespace OniDataDump
 				arr.Add(new JObject
 				{
 					["id"] = def.PrefabID,
-					["name"] = def.Name,
+					["name"] = Plain(def.Name),
 					["dlc"] = new JObject { ["requires"] = new JArray(def.RequiredDlcIds ?? new string[0]), ["forbids"] = new JArray(def.ForbiddenDlcIds ?? new string[0]) },
 					["inputs"] = inputs,
 					["outputs"] = outputs,
@@ -289,7 +289,7 @@ namespace OniDataDump
 				var o = new JObject
 				{
 					["id"] = id.PrefabTag.ToString(),
-					["name"] = prefab.GetProperName(),
+					["name"] = Plain(prefab.GetProperName()),
 					["dlc"] = Restrictions(id),
 				};
 				CreatureCalorieMonitor.Def calories = prefab.GetDef<CreatureCalorieMonitor.Def>();
@@ -357,7 +357,7 @@ namespace OniDataDump
 				var o = new JObject
 				{
 					["id"] = id.PrefabTag.ToString(),
-					["name"] = prefab.GetProperName(),
+					["name"] = Plain(prefab.GetProperName()),
 					["dlc"] = Restrictions(id),
 				};
 				Crop crop = prefab.GetComponent<Crop>();
@@ -431,7 +431,7 @@ namespace OniDataDump
 				arr.Add(new JObject
 				{
 					["world"] = world.Key,
-					["name"] = world.Value.name,
+					["name"] = Plain(Strings.Get(world.Value.name)),
 					["dlc"] = Restrictions(world.Value),
 					["biomes"] = new JArray(biomes.OrderBy(b => b)),
 					["elements"] = new JArray(elements.OrderBy(e => e)),
