@@ -6,6 +6,8 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Served from https://isochronous.github.io/oni-loops/
+  base: '/oni-loops/',
   plugins: [
     vue(),
     vueDevTools(),
