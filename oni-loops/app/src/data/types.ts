@@ -158,6 +158,22 @@ export interface ClusterData {
   spacePois: { pois: string[]; numToSpawn: number; guarantee: boolean }[]
 }
 
+/** A base-game rocket destination (the Starmap without Spaced Out). */
+export interface SpaceDestinationData {
+  id: string
+  name: string
+  visitable: boolean
+  cyclesToRecover: number
+  /** kg a destination holds when fully recharged. */
+  massToRecover: number
+  minMass: number
+  maxMass: number
+  /** Element id -> fraction range of the recovered mass. */
+  elements: Record<string, { min: number; max: number }>
+  /** Prefab id -> count of critters or seeds recoverable per trip. */
+  entities: Record<string, number>
+}
+
 export interface SpacePoiData {
   id: string
   dlc: DlcRestriction
@@ -184,4 +200,6 @@ export interface GameData {
   worldgen: WorldData[]
   clusters: ClusterData[]
   spacePois: SpacePoiData[]
+  /** Base-game Starmap destinations; empty when dumped with Spaced Out, absent in older dumps. */
+  spaceDestinations?: SpaceDestinationData[]
 }

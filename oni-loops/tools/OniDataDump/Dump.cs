@@ -53,6 +53,7 @@ namespace OniDataDump
 				["worldgen"] = Worldgen(),
 				["clusters"] = Clusters(),
 				["spacePois"] = SpacePois(),
+				["spaceDestinations"] = SpaceDestinations(),
 			};
 			File.WriteAllText(path, root.ToString(Formatting.Indented));
 		}
@@ -474,6 +475,36 @@ namespace OniDataDump
 						["numToSpawn"] = p.numToSpawn,
 						["guarantee"] = p.guarantee,
 					})),
+				});
+			}
+			return arr;
+		}
+
+		/// <summary>
+		/// Base-game rocket destinations (the Starmap without Spaced Out): each type's element
+		/// table (fraction ranges of the recovered mass), recoverable entities, and recharge.
+		/// Spaced Out replaces these with clusters and harvestable POIs.
+		/// </summary>
+		private static JArray SpaceDestinations()
+		{
+			var arr = new JArray();
+			var types = Db.Get().SpaceDestinationTypes;
+			if (types == null)
+				return arr;
+			for (int i = 0; i < types.Count; i++)
+			{
+				var t = types[i];
+				arr.Add(new JObject
+				{
+					["id"] = t.Id,
+					["name"] = Plain(t.typeName),
+					["visitable"] = t.visitable,
+					["cyclesToRecover"] = t.cyclesToRecover,
+					["massToRecover"] = Database.SpaceDestinationType.MASS_TO_RECOVER,
+					["minMass"] = t.minimumMass,
+					["maxMass"] = t.maxiumMass,
+					["elements"] = new JObject((t.elementTable ?? new Dictionary<SimHashes, MathUtil.MinMax>()).Select(e => new JProperty(e.Key.ToString(), new JObject { ["min"] = e.Value.min, ["max"] = e.Value.max }))),
+					["entities"] = new JObject((t.recoverableEntities ?? new Dictionary<string, int>()).Select(e => new JProperty(e.Key, e.Value))),
 				});
 			}
 			return arr;
