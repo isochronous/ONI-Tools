@@ -29,6 +29,16 @@ namespace OniDataDump
 					["dumpedAt"] = System.DateTime.UtcNow.ToString("o"),
 					["activeDlcs"] = new JArray(DlcIds().Where(DlcManager.IsContentSubscribed)),
 				},
+				// Wild (pip-planted / untamed) versus domesticated: wild plants grow at this
+				// fraction of the domestic rate and take no irrigation or fertiliser; wild
+				// critters burn (and so eat and excrete) this fraction of the tame calories.
+				["tuning"] = new JObject
+				{
+					["wildPlantGrowthModifier"] = TUNING.CROPS.WILD_GROWTH_RATE_MODIFIER,
+					["wildCritterCalorieBurnRatio"] = TUNING.CREATURES.WILD_CALORIE_BURN_RATIO,
+					["wildCritterGrowthModifier"] = TUNING.CREATURES.WILD_GROWTH_RATE_MODIFIER,
+					["secondsPerCycle"] = 600f,
+				},
 				["dlcs"] = new JArray(DlcIds().Select(id => new JObject { ["id"] = id, ["name"] = DlcName(id) })),
 				["elements"] = Elements(),
 				["items"] = Items(),
@@ -269,12 +279,36 @@ namespace OniDataDump
 						["producedPerKgEaten"] = info.producedConversionRate,
 					}));
 				}
+				// Tame metabolism from the critter's base trait: kcal burned per cycle and stomach
+				// size. Wild critters burn tuning.wildCritterCalorieBurnRatio of this.
+				Modifiers modifiers = prefab.GetComponent<Modifiers>();
+				if (modifiers != null && modifiers.initialTraits != null)
+				{
+					string calorieDelta = Db.Get().Amounts.Calories.deltaAttribute.Id;
+					string calorieMax = Db.Get().Amounts.Calories.maxAttribute.Id;
+					foreach (string traitId in modifiers.initialTraits)
+					{
+						Klei.AI.Trait trait = Db.Get().traits.TryGet(traitId);
+						if (trait == null)
+							continue;
+						foreach (Klei.AI.AttributeModifier m in trait.SelfModifiers)
+						{
+							if (m.AttributeId == calorieDelta)
+								o["caloriesBurnedPerCycle"] = -m.Value * 600f;
+							else if (m.AttributeId == calorieMax)
+								o["stomachCalories"] = m.Value;
+						}
+					}
+				}
 				Butcherable butcherable = prefab.GetComponent<Butcherable>();
 				if (butcherable?.drops != null)
 					o["deathDrops"] = new JArray(butcherable.drops.Select(d => new JObject { ["tag"] = d.Key, ["count"] = d.Value }));
 				FertilityMonitor.Def fertility = prefab.GetDef<FertilityMonitor.Def>();
 				if (fertility != null)
+				{
 					o["egg"] = fertility.eggPrefab.ToString();
+					o["cyclesPerEgg"] = fertility.baseFertileCycles;
+				}
 				BabyMonitor.Def baby = prefab.GetDef<BabyMonitor.Def>();
 				if (baby != null)
 				{
