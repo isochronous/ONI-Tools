@@ -26,6 +26,7 @@ export type ProcessKind =
   | 'worldgen' // found in an asteroid's terrain
   | 'starmap' // brought back by a base-game rocket from a Starmap destination
   | 'rot' // food spoils into a rot pile; a rot pile decomposes into polluted dirt
+  | 'hatch' // an egg hatches and the baby grows into the adult critter
 
 export interface Flow {
   tag: string
@@ -143,6 +144,8 @@ export function stepLabel(p: Process): string {
       return p.viaId === 'RotPile' ? p.via + ' decomposes' : p.via + ' spoils'
     case 'egg':
       return p.via + ' lays an egg'
+    case 'hatch':
+      return p.via + ' hatches and grows up'
     case 'grow':
       return p.via + ' grows up'
     case 'shear':
@@ -401,6 +404,10 @@ export function buildGraph(d: GameData): Graph {
 
   // Critters.
   const critters = new Map<string, { name: string; dlc: DlcRestriction }>()
+  /** Adults that lay eggs or eat: what a ranch can breed, as opposed to a robot or a one-off. */
+  const ranchable = new Set(
+    d.critters.filter((c) => !c.adult && (c.egg || c.diet?.length)).map((c) => c.id),
+  )
   for (const c of d.critters) {
     critters.set(c.id, { name: c.name, dlc: c.dlc })
     // Babies eat and die like their adults; only the adult is listed (and ranched).
@@ -477,6 +484,19 @@ export function buildGraph(d: GameData): Graph {
         wildFactor: d.tuning.wildCritterGrowthModifier,
       })
     }
+    if (c.egg && !c.adult && d.names[c.egg]) {
+      // The egg becomes the adult: one critter per egg, after incubation and growing up.
+      add({
+        kind: 'hatch',
+        via: label(c.egg),
+        viaId: c.egg,
+        inputs: [{ tag: c.egg, amount: 1 }],
+        outputs: [{ tag: c.id, amount: 1 }],
+        dlc: c.dlc,
+        needs: { critter: c.id },
+        notes: ['incubated, then raised to an adult'],
+      })
+    }
     if (c.growDrop) {
       // One per baby that grows up, so one per egg the parent lays.
       const parent = c.adult ? d.critters.find((a) => a.id === c.adult) : undefined
@@ -521,6 +541,15 @@ export function buildGraph(d: GameData): Graph {
       const inputs: Flow[] = []
       for (const f of [...(p.irrigation ?? []), ...(p.fertilizer ?? [])])
         inputs.push({ tag: f.tag, amount: f.rate * p.crop.durationSeconds })
+      // A flytrap eats one grown critter of the kinds it accepts before each harvest.
+      const prey = (p.prey ?? []).filter((id) => ranchable.has(id))
+      if (prey.length)
+        inputs.push({
+          tag: prey[0]!,
+          amount: 1,
+          anyOf: prey.length > 1 ? prey : undefined,
+          anyOfName: 'critter it can catch',
+        })
       const extras: string[] = []
       if (p.branches) extras.push(`across up to ${p.branches} vines on one plant`)
       if (p.needsPollination) extras.push('needs pollination (Mimika, Sweetle, or Grubgrub)')

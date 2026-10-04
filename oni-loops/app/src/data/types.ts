@@ -140,6 +140,8 @@ export interface PlantData {
   branches?: number
   /** Wilts unless a Mimika, Sweetle, or Grubgrub tends it. */
   needsPollination?: boolean
+  /** Critter prefab ids a flytrap plant eats, one per harvest, when it is one. */
+  prey?: string[]
 }
 
 export interface GeyserData {

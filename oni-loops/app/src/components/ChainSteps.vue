@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { qty, unitOf } from '../model'
 import { fmt, stepLabel } from '../model/graph'
 import type { Input, Node } from '../model/chains'
+import type { Process } from '../model/graph'
 import { TIER_LABEL, type Tiers } from '../model/tiers'
 import TagIcon from './TagIcon.vue'
 
@@ -102,7 +103,12 @@ function list(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`
 }
 
-function alternatives(names: string[]): string {
+/** Another way to do the step, with what that way needs at this rate: "Lura Plant (wild) harvest (16 plants)". */
+function alternatives(n: Node): string {
+  const names = (n.alternatives ?? []).map((p) => {
+    const count = countText(n, p)
+    return count ? `${stepLabel(p)} (${count})` : stepLabel(p)
+  })
   const shown = names.slice(0, 3)
   const more = names.length - shown.length
   return more > 0 ? list([...shown, `${more} more`]) : list(shown)
@@ -138,8 +144,8 @@ function outside(n: Node): Input[] {
  * How many of what does the step the rate keeps busy: "one running 3% of the time",
  * "4 of them", "2 Duplicants once a cycle each", "1 geyser".
  */
-function countText(n: Node): string {
-  const t = n.process.throughput
+function countText(n: Node, process: Process = n.process): string {
+  const t = process.throughput
   if (!t) return ''
   const count = (n.runs / t.runsPerCycle) * props.rate
   const whole = Math.ceil(count - 1e-9)
@@ -204,8 +210,8 @@ function doer(n: Node): string | undefined {
             ><span
               v-if="row.node.alternatives?.length"
               class="alt"
-              :title="row.node.alternatives.join(', ')"
-              >Or {{ alternatives(row.node.alternatives) }}.</span
+              :title="row.node.alternatives.map((p) => stepLabel(p)).join(', ')"
+              >Or {{ alternatives(row.node) }}.</span
             >
           </template>
           <span v-else class="amount num"

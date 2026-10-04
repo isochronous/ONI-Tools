@@ -56,7 +56,7 @@ function show(n: Node, depth: number) {
       )
   }
   console.log(
-    `${pad}${stepLabel(n.process)}${n.alternatives?.length ? ' or ' + n.alternatives.join('/') : ''} -> ${fmt(n.amount)} ${label(n.output)}`,
+    `${pad}${stepLabel(n.process)}${n.alternatives?.length ? ' or ' + n.alternatives.map((p) => stepLabel(p)).join('/') : ''} -> ${fmt(n.amount)} ${label(n.output)}`,
   )
 }
 

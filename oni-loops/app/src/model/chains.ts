@@ -47,8 +47,8 @@ export interface Node {
   tier: Tier
   /** Processes in this subtree. */
   size: number
-  /** Other processes that make the same output from the same inputs. */
-  alternatives?: string[]
+  /** Other processes that make the same output from the same inputs in the same proportions. */
+  alternatives?: Process[]
 }
 
 /**
@@ -128,7 +128,7 @@ interface Shape {
   incidental: boolean
   /** Units of target fed back per unit of this shape's output. */
   feedback: number
-  alternatives: string[]
+  alternatives: Process[]
 }
 
 interface ShapeInput {
@@ -292,15 +292,15 @@ export function findChains(
           .sort(),
       ].join('|')
       const existing = groups.get(key)
+      const named = (list: Process[], q: Process) => list.some((x) => stepLabel(x) === stepLabel(q))
       if (!existing) groups.set(key, shape)
       else if (compareShapes(shape, existing) < 0) {
-        shape.alternatives = [...new Set([stepLabel(existing.process), ...existing.alternatives])]
+        shape.alternatives = [existing.process, ...existing.alternatives].filter(
+          (x, k, all) => stepLabel(x) !== stepLabel(p) && !named(all.slice(0, k), x),
+        )
         groups.set(key, shape)
-      } else if (
-        !existing.alternatives.includes(stepLabel(p)) &&
-        stepLabel(p) !== stepLabel(existing.process)
-      )
-        existing.alternatives.push(stepLabel(p))
+      } else if (!named([existing.process, ...existing.alternatives], p))
+        existing.alternatives.push(p)
     }
     return [...groups.values()].sort(compareShapes)
   }

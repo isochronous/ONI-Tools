@@ -567,6 +567,11 @@ namespace OniDataDump
 					o["seed"] = new JObject { ["item"] = seeds.seedInfo.seedId, ["productionType"] = seeds.seedInfo.productionType.ToString(), ["count"] = seeds.seedInfo.newSeedsProduced };
 				if (prefab.GetDef<PollinationMonitor.Def>() != null)
 					o["needsPollination"] = true;
+				// A flytrap (the Lura Plant, the Saturn Critter Trap) pauses growing until it has eaten
+				// one critter of the kinds it accepts, so each harvest costs one of them.
+				IPlantConsumeEntities trap = prefab.GetComponent<IPlantConsumeEntities>();
+				if (trap != null)
+					o["prey"] = new JArray(trap.GetPrefabsOfPossiblePrey().Select(k => k.PrefabTag.ToString()));
 				arr.Add(o);
 			}
 			// Vine mothers (the Ovagro Node) have no Growing or Crop of their own: they sprout up to

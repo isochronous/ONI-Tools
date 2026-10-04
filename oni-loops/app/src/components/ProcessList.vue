@@ -35,6 +35,7 @@ const KIND_TITLES: Record<ProcessKind, string> = {
   transition: 'Phase change, by heating or cooling in-world',
   sublimate: 'Off-gassing',
   rot: 'Spoiling and decomposing',
+  hatch: 'Hatched from eggs',
   geyser: 'Geysers and vents',
   worldgen: 'In the terrain of',
   starmap: 'Brought back by rockets from',
