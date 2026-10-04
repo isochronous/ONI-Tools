@@ -440,14 +440,22 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         groups.set(key, g)
       }
       for (const g of groups.values()) {
-        // A fed population also dies of old age, so what a critter drops on death comes with
-        // its diet: per kilogram eaten, the share of a lifetime that kilogram is.
+        // A fed stable breeds, and every critter born ends as one death drop, as a surplus
+        // hatchling put down or as old age, so what the critter drops comes with its diet: per
+        // kilogram eaten, the eggs laid in the time that kilogram feeds (or, for a critter that
+        // lays none, the share of a lifetime it is).
         const kgPerCycle = c.caloriesBurnedPerCycle ? c.caloriesBurnedPerCycle / g.caloriesPerKg : 0
+        const happiness = options.happiness?.(c.id) ?? DEFAULT_HAPPINESS
+        const bornPerCycle = c.cyclesPerEgg
+          ? (1 + (d.tuning.fertilityPerHappiness ?? 2.25) * Math.max(0, happiness)) / c.cyclesPerEgg
+          : c.lifespanCycles
+            ? 1 / c.lifespanCycles
+            : 0
         const drops: Flow[] =
-          kgPerCycle > 0 && c.lifespanCycles
+          kgPerCycle > 0 && bornPerCycle > 0
             ? (c.deathDrops ?? []).map((x) => ({
                 tag: x.tag,
-                amount: x.count / (kgPerCycle * c.lifespanCycles!),
+                amount: (x.count * bornPerCycle) / kgPerCycle,
               }))
             : []
         add({
