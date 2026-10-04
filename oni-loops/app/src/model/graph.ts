@@ -440,6 +440,16 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         groups.set(key, g)
       }
       for (const g of groups.values()) {
+        // A fed population also dies of old age, so what a critter drops on death comes with
+        // its diet: per kilogram eaten, the share of a lifetime that kilogram is.
+        const kgPerCycle = c.caloriesBurnedPerCycle ? c.caloriesBurnedPerCycle / g.caloriesPerKg : 0
+        const drops: Flow[] =
+          kgPerCycle > 0 && c.lifespanCycles
+            ? (c.deathDrops ?? []).map((x) => ({
+                tag: x.tag,
+                amount: x.count / (kgPerCycle * c.lifespanCycles!),
+              }))
+            : []
         add({
           kind: 'diet',
           via: c.name,
@@ -447,7 +457,7 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
           inputs: [
             { tag: g.foods[0]!, amount: 1, anyOf: g.foods.length > 1 ? g.foods : undefined },
           ],
-          outputs: [{ tag: g.produces, amount: g.rate }],
+          outputs: [{ tag: g.produces, amount: g.rate }, ...drops],
           dlc: c.dlc,
           needs: { critter: c.id },
           throughput: c.caloriesBurnedPerCycle

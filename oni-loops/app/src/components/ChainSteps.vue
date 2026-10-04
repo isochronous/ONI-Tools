@@ -22,9 +22,11 @@ const props = defineProps<{
 
 type Rail = 'none' | 'down' | 'through' | 'up'
 interface RunRow {
-  kind: 'step' | 'material'
+  kind: 'step' | 'material' | 'feedback'
   node: Node
   rail: Rail
+  /** For a feedback row: the share of the product fed back into this step. */
+  input?: Input
 }
 type Row =
   | RunRow
@@ -43,6 +45,9 @@ function rows(node: Node, isRoot: boolean): Row[] {
     })
     out.push({ kind: 'join' })
   }
+  // A loop starts with the product it feeds itself, as its own line.
+  for (const i of node.inputs)
+    if (i.feedback) out.push({ kind: 'feedback', node, rail: 'none', input: i })
   out.push({ kind: 'step', node, rail: 'none' })
   if (!isRoot) out.push({ kind: 'material', node, rail: 'none' })
   return out
@@ -59,7 +64,7 @@ const runs = computed<(Run | Row)[]>(() => {
   let current: RunRow[] = []
   const flush = () => {
     if (!current.length) return
-    const dots = current.map((r, i) => (r.kind === 'material' ? i : -1)).filter((i) => i >= 0)
+    const dots = current.map((r, i) => (r.kind !== 'step' ? i : -1)).filter((i) => i >= 0)
     const first = dots[0] ?? -1
     const last = dots[dots.length - 1] ?? -1
     current.forEach((r, i) => {
@@ -137,7 +142,7 @@ function gathered(n: Node): string {
 }
 
 function outside(n: Node): Input[] {
-  return n.inputs.filter((i) => !i.node)
+  return n.inputs.filter((i) => !i.node && !i.feedback)
 }
 
 /**
@@ -214,6 +219,12 @@ function doer(n: Node): string | undefined {
               >Or {{ alternatives(row.node) }}.</span
             >
           </template>
+          <template v-else-if="row.kind === 'feedback'">
+            <span class="amount num"
+              ><TagIcon :tag="row.input!.tag" />{{ inputText(row.input!) }}</span
+            >
+            <span class="fed-back">from what this loop makes</span>
+          </template>
           <span v-else class="amount num"
             ><TagIcon :tag="row.node.output" />{{ qty(at(row.node.amount), row.node.output) }}</span
           >
@@ -249,10 +260,17 @@ function doer(n: Node): string | undefined {
   max-width: var(--measure);
   padding-bottom: 0.15rem;
 }
-.material {
+.material,
+.feedback {
   line-height: 1.6;
   padding-bottom: 0.35rem;
 }
+.fed-back {
+  margin-left: 0.6rem;
+  font-size: 0.875rem;
+  color: var(--good);
+}
+.feedback::before,
 .material::before {
   content: '';
   position: absolute;
