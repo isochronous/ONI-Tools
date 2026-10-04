@@ -64,11 +64,13 @@ if "--no-icons" not in sys.argv and os.path.isdir(icons):
     kept = {f[:-4] for f in os.listdir(dest) if f.endswith(".png")}
     for tag in sorted(wanted & exported):
         shutil.copyfile(os.path.join(icons, tag + ".png"), os.path.join(dest, tag + ".png"))
-    have = (wanted & exported) | (wanted & kept)
+    # A dump of one flavour wants only its own things, so what the other flavour's import
+    # put in the manifest stays too; only icons no flavour wants go.
+    old = set(json.load(open(os.path.join(root, "data", "icons.json"), encoding="utf-8"))) if os.path.exists(os.path.join(root, "data", "icons.json")) else set()
+    have = (wanted & exported) | (wanted & kept) | (old & kept)
     for f in os.listdir(dest):
         if f.endswith(".png") and f[:-4] not in have:
             os.remove(os.path.join(dest, f))
-    old = set(json.load(open(os.path.join(root, "data", "icons.json"), encoding="utf-8"))) if os.path.exists(os.path.join(root, "data", "icons.json")) else set()
-    manifest = sorted(have | (old & kept))
+    manifest = sorted(have)
     json.dump(manifest, open(os.path.join(root, "data", "icons.json"), "w", encoding="utf-8"))
     print("copied", len(wanted & exported), "of", len(exported), "icons to", dest, "; manifest", len(manifest), "; wanted but missing:", sorted(wanted - have)[:40], len(wanted - have))

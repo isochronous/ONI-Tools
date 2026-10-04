@@ -967,6 +967,10 @@ namespace OniDataDump
 		private static JArray Worldgen()
 		{
 			var arr = new JArray();
+			// Only worldgen itself sets the template cache up, so at the main menu it may not
+			// exist yet; without it every template lookup fails and the rules come back empty.
+			if (!TemplateCache.Initted)
+				TemplateCache.Init();
 			var bands = ProcGen.SettingsCache.biomes?.BiomeBackgroundElementBandConfigurations;
 			if (bands == null)
 				return arr;
