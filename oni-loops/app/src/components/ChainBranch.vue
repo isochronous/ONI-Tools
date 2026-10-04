@@ -102,7 +102,7 @@ function doer(): string | undefined {
     <ChainBranch :node="branches()[0]!.node!" :rate="rate" :tiers="tiers" :target="target" />
   </template>
   <li v-else-if="branches().length > 1" class="branches">
-    <ol v-for="i in branches()" :key="i.tag" class="chain branch">
+    <ol v-for="i in branches()" :key="i.tag" class="branch">
       <ChainBranch :node="i.node!" :rate="rate" :tiers="tiers" :target="target" />
     </ol>
   </li>
@@ -144,18 +144,48 @@ function doer(): string | undefined {
 </template>
 
 <style scoped>
+/*
+ * A step fed by several made inputs is a confluence: each input's chain runs down its own
+ * side rail, which curves into the trunk just above the step that consumes them all.
+ */
 .branches {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.25rem 0 0.5rem 0;
+  gap: 1rem;
+  padding: 0.25rem 0 1.25rem;
 }
-.chain.branch {
-  margin: 0;
-  padding: 0.35rem 0 0.35rem 1.25rem;
+.branch {
+  --lane: 1.5rem;
+  margin: 0 0 0 var(--lane);
+  padding: 0 0 0.25rem 1.25rem;
   list-style: none;
   position: relative;
   border-left: 2px solid var(--rail);
-  border-radius: 1px;
+}
+/* The curve from the side rail down into the trunk. */
+.branch::after {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--lane) - 2px);
+  bottom: calc(-1 * var(--lane));
+  width: var(--lane);
+  height: var(--lane);
+  border-right: 2px solid var(--rail);
+  border-bottom: 2px solid var(--rail);
+  border-bottom-right-radius: var(--lane);
+}
+/* The side rail starts at its first dot, not above it. */
+.branch > .node:first-child::after,
+.branch > .via:first-child::after {
+  content: '';
+  position: absolute;
+  left: calc(-1.25rem - 2px);
+  top: -0.25rem;
+  width: 2px;
+  height: 0.9rem;
+  background: var(--panel);
+}
+.branch > .via:first-child::after {
+  height: 0.6rem;
 }
 .node {
   position: relative;
