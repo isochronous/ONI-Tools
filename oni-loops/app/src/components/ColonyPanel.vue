@@ -138,17 +138,19 @@ function has(id: string) {
       </label>
     </div>
 
-    <div v-if="gameData.plantMutations?.length" class="group">
-      <p class="eyebrow row">
-        Plants
-        <button type="button" class="link" @click="showPlants = !showPlants">
-          {{ showPlants ? 'Done' : 'Choose' }}
-        </button>
-      </p>
-      <p class="hint">
-        <template v-if="mutatedCount">{{ mutatedCount }} with a mutated seed.</template>
-        <template v-else>Plain seeds throughout.</template>
-      </p>
+    <details
+      v-if="gameData.plantMutations?.length"
+      class="group fold"
+      :open="showPlants"
+      @toggle="showPlants = ($event.target as HTMLDetailsElement).open"
+    >
+      <summary class="fold-head">
+        <span class="eyebrow">Plants</span>
+        <span class="hint">
+          <template v-if="mutatedCount">{{ mutatedCount }} with a mutated seed</template>
+          <template v-else>plain seeds throughout</template>
+        </span>
+      </summary>
       <template v-if="showPlants">
         <p class="hint">
           A mutated seed changes the plant's yield, growth time, and water or fertilizer use, and
@@ -172,23 +174,26 @@ function has(id: string) {
           </div>
         </div>
       </template>
-    </div>
+    </details>
 
-    <div class="group">
-      <p class="eyebrow row">
-        Critters
-        <button type="button" class="link" @click="showCritters = !showCritters">
-          {{ showCritters ? 'Done' : 'Choose' }}
-        </button>
-      </p>
+    <details
+      class="group fold"
+      :open="showCritters"
+      @toggle="showCritters = ($event.target as HTMLDetailsElement).open"
+    >
+      <summary class="fold-head">
+        <span class="eyebrow">Critters</span>
+        <span class="hint">
+          <template v-if="store.critters === null">assuming any critter is available</template>
+          <template v-else>{{ store.critters.size }} of {{ critters.length }} available</template>
+        </span>
+      </summary>
       <p v-if="store.critters === null" class="hint">
-        Assuming any critter is available.
-        <button v-if="showCritters" type="button" class="link" @click="store.critters = new Set()">
+        <button type="button" class="link" @click="store.critters = new Set()">
           Start from none
         </button>
       </p>
       <p v-else class="hint">
-        {{ store.critters.size }} of {{ critters.length }} available.
         <button type="button" class="link" @click="store.assumeAllCritters()">Assume all</button>
       </p>
       <template v-if="showCritters">
@@ -223,7 +228,7 @@ function has(id: string) {
           </div>
         </div>
       </template>
-    </div>
+    </details>
   </section>
 </template>
 
@@ -241,13 +246,33 @@ h2 {
 .group {
   margin-top: 1.25rem;
 }
-.eyebrow.row {
+/* A group that folds away: its summary names it and says what is chosen, with a chevron. */
+.fold-head {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: baseline;
+  gap: 0.25rem 0.6rem;
+  cursor: pointer;
+  list-style: none;
 }
-.eyebrow .link {
-  font-size: 0.875rem;
+.fold-head::-webkit-details-marker {
+  display: none;
+}
+.fold-head .eyebrow {
+  margin: 0;
+}
+.fold-head .eyebrow::before {
+  content: '▸';
+  display: inline-block;
+  width: 1rem;
+  color: var(--muted);
+  transition: transform 120ms;
+}
+.fold[open] .fold-head .eyebrow::before {
+  transform: rotate(90deg);
+}
+.fold-head .hint {
+  margin: 0;
 }
 .check {
   display: flex;
