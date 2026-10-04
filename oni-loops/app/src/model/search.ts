@@ -35,6 +35,8 @@ export interface Step {
   to: string
   /** Units of `to` per unit of `from` through this step. */
   ratio: number
+  /** Other ways to do this same step (another machine, critter, or in-world phase change). */
+  alternatives?: string[]
 }
 
 export interface Loop {
@@ -59,7 +61,6 @@ export interface Loop {
   /** The hardest-to-get external input's tier; 'renewable' when there are none. */
   worstTier: Tier
   /** Other processes that do the same step (another fabricator, another kiln). */
-  alternatives: string[]
 }
 
 export interface Answer {
@@ -128,7 +129,8 @@ export function findLoops(graph: Graph, target: string, colony: Colony, tiers: T
   const loops: Loop[] = []
   const seen = new Set<string>()
   // One loop per sequence of resources (and primary/side-stream); variants that only swap the
-  // machine or critter doing a step are folded into `alternatives` of the best-returning one.
+  // machine or critter doing a step are folded into that step's `alternatives` on the
+  // best-returning one.
   const byPath = new Map<string, Loop>()
 
   // Iterative deepening: all 2-step loops before any 3-step one, so the cap on loops never
@@ -163,12 +165,13 @@ export function findLoops(graph: Graph, target: string, colony: Colony, tiers: T
             const best = preferred(existing, loop)
             const other = best === existing ? loop : existing
             for (let i = 0; i < best.steps.length; i++) {
-              const a = stepLabel(best.steps[i]!.process)
-              const b = stepLabel(other.steps[i]!.process)
-              if (a !== b && !best.alternatives.includes(b)) best.alternatives.push(b)
+              // Step objects are shared between loops, so a step gains alternatives by copy.
+              const mine = best.steps[i]!
+              const theirs = other.steps[i]!
+              const names = [stepLabel(theirs.process), ...(theirs.alternatives ?? [])].filter((n) => n !== stepLabel(mine.process) && !mine.alternatives?.includes(n))
+              if (names.length) best.steps[i] = { ...mine, alternatives: [...(mine.alternatives ?? []), ...names] }
             }
             if (best !== existing) {
-              best.alternatives.push(...existing.alternatives.filter((x) => !best.alternatives.includes(x)))
               byPath.set(path, best)
               loops[loops.indexOf(existing)] = best
             }
@@ -243,7 +246,7 @@ function summarise(graph: Graph, steps: Step[], ratio: number, target: string, c
     const tier = tiers.of(f.tag)
     if (TIER_ORDER[tier] > TIER_ORDER[worstTier]) worstTier = tier
   }
-  return { steps, ratio, externals, byproducts, primary: minShare >= colony.primaryShare, minShare, worstTier, alternatives: [] }
+  return { steps, ratio, externals, byproducts, primary: minShare >= colony.primaryShare, minShare, worstTier }
 }
 
 export function answer(graph: Graph, target: string, colony: Colony, tiers: Tiers): Answer {

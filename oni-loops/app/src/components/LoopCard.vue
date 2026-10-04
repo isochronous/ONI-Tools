@@ -34,14 +34,12 @@ function needsOf(s: Step): string[] {
         <span class="how">
           {{ how(s) }}
           <small v-for="n in needsOf(s)" :key="n" class="need">{{ n }}</small>
+          <small v-if="s.alternatives?.length" class="alt" :title="s.alternatives.join(', ')">or {{ s.alternatives.slice(0, 3).join(', or ') }}<template v-if="s.alternatives.length > 3"> and {{ s.alternatives.length - 3 }} more</template></small>
         </span>
         <span class="arrow">→</span>
         <span class="to">{{ fmt(loop.steps.slice(0, i + 1).reduce((r, x) => r * x.ratio, 1)) }} {{ label(s.to) }}</span>
       </li>
     </ol>
-    <p v-if="loop.alternatives.length" class="alts" :title="loop.alternatives.join(', ')">
-      or using {{ loop.alternatives.slice(0, 6).join(', ') }}<template v-if="loop.alternatives.length > 6"> and {{ loop.alternatives.length - 6 }} more</template>
-    </p>
     <footer v-if="loop.externals.length || loop.byproducts.length">
       <p v-if="loop.externals.length">
         <strong>Also needs</strong> per 1 {{ label(target) }}:
@@ -155,9 +153,9 @@ footer p {
   border-radius: 4px;
   color: var(--warn);
 }
-.alts {
-  margin: 0.3rem 0 0;
-  font-size: 0.85rem;
+.alt {
+  display: block;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 </style>

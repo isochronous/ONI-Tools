@@ -22,7 +22,7 @@ for (const target of ['Diamond', 'BasicFabric', 'TempConductorSolid', 'Water']) 
   const a = answer(graph, target, colony, tiers)
   console.log(`\n== ${label(target)}: ${a.loops.length} loops shown, ${a.hiddenCycles} hidden, ${a.producers.length} producers, ${a.locked.length} locked`)
   for (const loop of a.loops.slice(0, 4)) {
-    console.log(`  x${fmt(loop.ratio)} ${loop.primary ? 'primary' : 'side-stream(' + fmt(loop.minShare * 100) + '%)'} worst=${loop.worstTier}: ` + loop.steps.map((s) => `${label(s.from)} -[${s.process.via}]-> ${label(s.to)}`).join(' ; '))
+    console.log(`  x${fmt(loop.ratio)} ${loop.primary ? 'primary' : 'side-stream(' + fmt(loop.minShare * 100) + '%)'} worst=${loop.worstTier}: ` + loop.steps.map((s) => `${label(s.from)} -[${s.process.via}${s.alternatives?.length ? ' or ' + s.alternatives.join('/') : ''}]-> ${label(s.to)}`).join(' ; '))
     if (loop.externals.length) console.log('      needs: ' + loop.externals.slice(0, 4).map((f) => `${fmt(f.amount)} ${label(f.tag)} [${tiers.of(f.tag)}]`).join(', '))
   }
 }
