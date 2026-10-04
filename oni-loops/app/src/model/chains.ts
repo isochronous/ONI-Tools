@@ -26,6 +26,7 @@ export interface Input {
   tag: string
   amount: number
   anyOfName?: string
+  role?: Flow['role']
   /** The sub-chain that makes it. */
   node?: Node
   /** True when this is the chain's own product fed back in. */
@@ -567,6 +568,7 @@ function materialise(shape: Shape, amount: number): Node {
     tag: i.tag,
     amount: i.flow.amount * runs,
     anyOfName: i.flow.anyOf ? i.flow.anyOfName : undefined,
+    role: i.flow.role,
     node: i.shape ? materialise(i.shape, i.flow.amount * runs) : undefined,
     feedback: i.feedback,
     tier: i.tier,

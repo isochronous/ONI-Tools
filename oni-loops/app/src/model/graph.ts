@@ -38,6 +38,8 @@ export interface Flow {
   anyOf?: string[]
   /** What the alternatives have in common, for display ("compostable item"); kinds otherwise. */
   anyOfName?: string
+  /** For a plant's input: what the plant does with it, so a step can read "used to irrigate". */
+  role?: 'irrigation' | 'fertilizer' | 'prey'
 }
 
 export interface Needs {
@@ -668,8 +670,10 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
       const duration = p.crop.durationSeconds * growthScale
       const cycles = duration / d.tuning.secondsPerCycle
       const inputs: Flow[] = []
-      for (const f of [...(p.irrigation ?? []), ...(p.fertilizer ?? [])])
-        inputs.push({ tag: f.tag, amount: f.rate * duration * usageScale })
+      for (const f of p.irrigation ?? [])
+        inputs.push({ tag: f.tag, amount: f.rate * duration * usageScale, role: 'irrigation' })
+      for (const f of p.fertilizer ?? [])
+        inputs.push({ tag: f.tag, amount: f.rate * duration * usageScale, role: 'fertilizer' })
       // A bonus crop of the plant's own kind (Bonus Lice on a Mealwood) is simply more of it.
       const bonusCrop = mutated?.bonusCrop
       const extraOwn = bonusCrop && bonusCrop.tag === p.crop.item ? bonusCrop.amount : 0
@@ -687,6 +691,7 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
           amount: 1,
           anyOf: prey.length > 1 ? prey : undefined,
           anyOfName: 'critter it can catch',
+          role: 'prey',
         })
       const extras: string[] = []
       if (p.branches) extras.push(`across up to ${p.branches} vines on one plant`)

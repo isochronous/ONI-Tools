@@ -171,6 +171,24 @@ function countText(n: Node, process: Process = n.process): string {
   }
 }
 
+/**
+ * The step as a sentence from the material above it, in the same voice as "fed to Lumb": a
+ * plant fed from a run above reads by what it does with that material, "used to fertilize
+ * Dew Dripper" or "used to irrigate Bristle Blossom".
+ */
+function stepText(n: Node): string {
+  if (n.process.kind !== 'crop') return stepLabel(n.process)
+  const roles = new Set(n.inputs.filter((i) => i.node && i.role).map((i) => i.role!))
+  if (roles.size === 0) return stepLabel(n.process)
+  const verbs: string[] = []
+  if (roles.has('irrigation')) verbs.push('irrigate')
+  if (roles.has('fertilizer')) verbs.push('fertilize')
+  const use = verbs.length ? `used to ${verbs.join(' and ')}` : ''
+  if (roles.has('prey'))
+    return use ? `${use}, and fed to, ${n.process.via}` : `fed to ${n.process.via}`
+  return `${use} ${n.process.via}`
+}
+
 function doer(n: Node): string | undefined {
   const needs = n.process.needs
   return needs.building ?? needs.critter ?? needs.plant
@@ -187,7 +205,7 @@ function doer(n: Node): string | undefined {
           <template v-if="row.kind === 'step'">
             <span class="how" :class="{ source: row.node.inputs.length === 0 }"
               ><TagIcon v-if="doer(row.node)" :tag="doer(row.node)!" />{{
-                stepLabel(row.node.process)
+                stepText(row.node)
               }}</span
             ><span v-if="countText(row.node)" class="count"> ({{ countText(row.node) }})</span
             ><template v-if="gathered(row.node)">{{
