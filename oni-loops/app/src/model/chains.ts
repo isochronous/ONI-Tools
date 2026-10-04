@@ -331,6 +331,8 @@ export function findChains(
   const seen = new Set<string>()
   for (const shape of ways(target, 0).flatMap(variants)) {
     if (shape.feedback >= 1 - 1e-9) continue // feeds itself everything it makes
+    // "Dig it up" is not a way to make something; the tier line already says it is in the terrain.
+    if (shape.process.kind === 'worldgen') continue
     const sig = signature(shape)
     if (seen.has(sig)) continue
     seen.add(sig)
