@@ -6,7 +6,7 @@ import { fmt, stepLabel } from '../model/graph'
 import { nodesOf, type Chain } from '../model/chains'
 import { TIER_LABEL, type Tiers } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
-import ChainBranch from './ChainBranch.vue'
+import ChainTree from './ChainTree.vue'
 
 const props = defineProps<{ chain: Chain; target: string; tiers: Tiers; perCycle: number }>()
 const store = useColonyStore()
@@ -86,9 +86,9 @@ const costText = computed(() => {
       </p>
     </header>
 
-    <ol class="chain">
-      <ChainBranch :node="chain.root" :rate="perCycle" :tiers="tiers" :target="target" final />
-    </ol>
+    <ul class="tree">
+      <ChainTree :node="chain.root" :rate="perCycle" :tiers="tiers" root />
+    </ul>
 
     <p v-if="chain.needs.length || chain.makes.length" class="foot">
       Each cycle, for {{ fmt(perCycle) }}{{ unitOf(target) }} of {{ label(target) }}:
@@ -160,22 +160,11 @@ const costText = computed(() => {
   font-weight: 600;
 }
 
-/* The chain: materials sit on a rail, the process between two materials hangs off it. */
-.chain {
-  margin: 0;
-  padding: 0 0 0 1.25rem;
+/* The chain as a tree: the target at the top, what makes it beneath, what that takes beneath that. */
+.tree {
   list-style: none;
-  position: relative;
-}
-.chain::before {
-  content: '';
-  position: absolute;
-  left: 0.3125rem;
-  top: 0.75rem;
-  bottom: 0.75rem;
-  width: 2px;
-  background: var(--rail);
-  border-radius: 1px;
+  margin: 0;
+  padding: 0;
 }
 
 .foot {
