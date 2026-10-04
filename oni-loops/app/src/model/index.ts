@@ -1,5 +1,5 @@
 import { gameData, label } from '../data/load'
-import { buildGraph, type Graph } from './graph'
+import { buildGraph, fmt, type Graph } from './graph'
 import { setDlcNames } from './search'
 
 let graph: Graph | undefined
@@ -39,6 +39,16 @@ export function allTargets(): Target[] {
     targets = list.sort((a, b) => a.name.localeCompare(b.name))
   }
   return targets
+}
+
+/** "12 kg Water" for an element, "3 Ovagro Fig" for an item. */
+export function qty(amount: number, tag: string): string {
+  return useGraph().elements.has(tag) ? `${fmt(amount)} kg ${label(tag)}` : `${fmt(amount)} ${label(tag)}`
+}
+
+/** The unit word alone: "kg" for an element, nothing for an item. */
+export function unitOf(tag: string): string {
+  return useGraph().elements.has(tag) ? ' kg' : ''
 }
 
 export { label }

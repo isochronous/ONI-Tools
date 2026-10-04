@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { label } from '../data/load'
 import { fmt, type Flow, type Process, type ProcessKind } from '../model/graph'
-import { useGraph } from '../model'
+import { qty, unitOf, useGraph } from '../model'
 import { TIER_LABEL, TIER_ORDER, type Tier, type Tiers } from '../model/tiers'
 
 const props = defineProps<{ processes: Process[]; target: string; reasons?: Map<string, string>; tiers: Tiers }>()
@@ -50,10 +50,10 @@ const groups = computed(() => {
 
 /** "any seed (31 kinds)" for an any-of input, else the item's name. */
 function inputText(f: Flow): string {
-  if (!f.anyOf) return `${fmt(f.amount)} ${label(f.tag)}`
+  if (!f.anyOf) return qty(f.amount, f.tag)
   const kinds = new Set(f.anyOf.map((t) => graph.kinds.get(t) ?? 'item'))
   const what = f.anyOfName ? `any ${f.anyOfName}` : kinds.size === 1 ? `any ${[...kinds][0]}` : 'any of these'
-  return `${fmt(f.amount)} ${what} (${f.anyOf.length} kinds)`
+  return `${fmt(f.amount)}${unitOf(f.tag)} ${what} (${f.anyOf.length} kinds)`
 }
 
 function inputTitle(f: Flow): string {
@@ -100,8 +100,8 @@ function unit(p: Process): string {
                 <span v-for="(f, i) in p.inputs" :key="f.tag" :class="'t-' + inputTier(f)" :title="inputTitle(f)">{{ i ? ' + ' : '' }}{{ inputText(f) }}</span>
                 <span class="arrow"> → </span>
               </template>
-              <strong>{{ fmt(amountOf(p, target)) }} {{ label(target) }}{{ unit(p) }}</strong>
-              <span v-for="f in p.outputs.filter((o) => o.tag !== target)" :key="f.tag" class="extra"> + {{ fmt(f.amount) }} {{ label(f.tag) }}</span>
+              <strong>{{ qty(amountOf(p, target), target) }}{{ unit(p) }}</strong>
+              <span v-for="f in p.outputs.filter((o) => o.tag !== target)" :key="f.tag" class="extra"> + {{ qty(f.amount, f.tag) }}</span>
             </span>
             <span v-if="p.notes.length || p.needs.extras?.length" class="notes">
               {{ [...p.notes, ...(p.needs.extras ?? [])].join(' · ') }}

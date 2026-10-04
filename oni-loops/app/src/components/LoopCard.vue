@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { label } from '../data/load'
+import { qty, unitOf } from '../model'
 import { fmt, stepLabel } from '../model/graph'
 import { effectiveRatio, isPositive, type Loop, type Step } from '../model/search'
 import { TIER_LABEL, type Tiers } from '../model/tiers'
@@ -43,12 +44,12 @@ function needsOf(s: Step): string[] {
       <span class="ratio">×{{ fmt(effectiveRatio(loop)) }}</span>
       <span class="tier">{{ loop.topUp ? 'with a top-up' : positive ? 'net-positive loop' : 'top-up loop' }}</span>
       <span v-if="!loop.primary" class="side" :title="`At one step ${label(target)}'s share of what the machine eats is only ${fmt(loop.minShare * 100)}%; the rest is the real cost.`">side-stream</span>
-      <span v-if="loop.topUp" class="shortfall">with {{ fmt(loop.topUp.amount) }} extra {{ label(loop.topUp.tag) }} ({{ TIER_LABEL[loop.topUp.tier] }}) per {{ label(target) }} fed into step {{ loop.topUp.step + 1 }}; ×{{ fmt(loop.ratio) }} on its own</span>
-      <span v-else-if="!positive" class="shortfall">returns {{ fmt(loop.ratio) }} per 1 {{ label(target) }}; top up {{ fmt(1 - loop.ratio) }} elsewhere</span>
+      <span v-if="loop.topUp" class="shortfall">with {{ qty(loop.topUp.amount, loop.topUp.tag) }} extra ({{ TIER_LABEL[loop.topUp.tier] }}) per {{ unitOf(target).trim() || 'unit of' }} {{ label(target) }} fed into step {{ loop.topUp.step + 1 }}; ×{{ fmt(loop.ratio) }} on its own</span>
+      <span v-else-if="!positive" class="shortfall">returns {{ fmt(loop.ratio) }} per 1{{ unitOf(target) }} {{ label(target) }}; top up {{ fmt(1 - loop.ratio) }}{{ unitOf(target) }} elsewhere</span>
     </header>
     <ol class="chain">
       <li v-for="(s, i) in loop.steps" :key="i">
-        <span class="from">{{ fmt(into(i)) }} {{ label(s.from) }}<small v-if="loop.topUp && loop.topUp.step === i" class="topup">incl. {{ fmt(loop.topUp.amount) }} top-up</small></span>
+        <span class="from">{{ qty(into(i), s.from) }}<small v-if="loop.topUp && loop.topUp.step === i" class="topup">incl. {{ fmt(loop.topUp.amount) }}{{ unitOf(s.from) }} top-up</small></span>
         <span class="arrow">→</span>
         <span class="how">
           {{ how(s) }}
@@ -56,17 +57,17 @@ function needsOf(s: Step): string[] {
           <small v-if="s.alternatives?.length" class="alt" :title="s.alternatives.join(', ')">or {{ s.alternatives.slice(0, 3).join(', or ') }}<template v-if="s.alternatives.length > 3"> and {{ s.alternatives.length - 3 }} more</template></small>
         </span>
         <span class="arrow">→</span>
-        <span class="to">{{ fmt(outOf(i)) }} {{ label(s.to) }}</span>
+        <span class="to">{{ qty(outOf(i), s.to) }}</span>
       </li>
     </ol>
     <footer v-if="loop.externals.length || loop.byproducts.length">
       <p v-if="loop.externals.length">
-        <strong>Also needs</strong> per 1 {{ label(target) }}:
-        <span v-for="f in loop.externals" :key="f.tag" class="chip" :class="'t-' + tiers.of(f.tag)" :title="tiers.reason(f.tag)">{{ fmt(f.amount) }} {{ label(f.tag) }} <em>{{ TIER_LABEL[tiers.of(f.tag)] }}</em></span>
+        <strong>Also needs</strong> per 1{{ unitOf(target) }} {{ label(target) }}:
+        <span v-for="f in loop.externals" :key="f.tag" class="chip" :class="'t-' + tiers.of(f.tag)" :title="tiers.reason(f.tag)">{{ qty(f.amount, f.tag) }} <em>{{ TIER_LABEL[tiers.of(f.tag)] }}</em></span>
       </p>
       <p v-if="loop.byproducts.length">
         <strong>Also makes</strong>:
-        <span v-for="f in loop.byproducts" :key="f.tag" class="chip plus">{{ fmt(f.amount) }} {{ label(f.tag) }}</span>
+        <span v-for="f in loop.byproducts" :key="f.tag" class="chip plus">{{ qty(f.amount, f.tag) }}</span>
       </p>
     </footer>
   </article>
