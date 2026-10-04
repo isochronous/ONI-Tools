@@ -211,18 +211,28 @@ export function findLoops(graph: Graph, target: string, colony: Colony, tiers: T
 }
 
 /**
- * Easiest externals first (a loop needing only Sand beats one needing Isoresin), then
- * net-positive before top-up, primary before side-stream, then by return, then shorter.
+ * Easiest externals first (a loop needing only Sand beats one needing Isoresin, and a
+ * top-up counts as an external), then primary before side-stream, then loops that pay back
+ * (on their own or topped up) before those that do not, self-sufficient before topped-up,
+ * then by what they return, then the cheaper in outside inputs, then shorter.
  */
 export function compareLoops(a: Loop, b: Loop): number {
   return (
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
-    Number(isPositive(b)) - Number(isPositive(a)) ||
-    Number(isClosed(b)) - Number(isClosed(a)) ||
     Number(b.primary) - Number(a.primary) ||
-    b.ratio - a.ratio ||
+    Number(isClosed(b)) - Number(isClosed(a)) ||
+    Number(isPositive(b)) - Number(isPositive(a)) ||
+    effectiveRatio(b) - effectiveRatio(a) ||
+    externalCost(a) - externalCost(b) ||
     a.steps.length - b.steps.length
   )
+}
+
+/** Outside input per unit of target, as a rough single number (kg and item counts added as-is). */
+function externalCost(loop: Loop): number {
+  let total = 0
+  for (const f of loop.externals) total += f.amount
+  return total
 }
 
 /** True when the chain nets more target than it consumes. */
