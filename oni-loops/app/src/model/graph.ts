@@ -198,6 +198,10 @@ export const DEFAULT_HAPPINESS = 4
 export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
   const processes: Process[] = []
   const elementIds = new Set(d.elements.filter((e) => !e.disabled).map((e) => e.id))
+  const byId = new Map(d.elements.map((e) => [e.id, e]))
+  // The sim changes phase only once the temperature is `buffer` kelvin past the nominal
+  // point (Water freezes at -3 °C, not 0 °C), so the thresholds shown are the in-game ones.
+  const buffer = d.tuning.stateTransitionBufferK ?? 0
   const itemIds = new Set(d.items.map((it) => it.id))
   const add = (p: Omit<Process, 'id'> & { id?: string }) => {
     if (p.outputs.length === 0) return
@@ -208,29 +212,32 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
   for (const e of d.elements) {
     if (e.disabled) continue
     const dlc = elementDlc(e.dlc)
-    // The sim changes phase only once the temperature is `buffer` kelvin past the nominal
-    // point (Water freezes at -3 °C, not 0 °C), so the thresholds shown are the in-game ones.
-    const buffer = d.tuning.stateTransitionBufferK ?? 0
     const transitions: [
       string,
       { id: string; massFraction: number } | undefined,
       string,
       boolean,
+      number,
+      1 | -1,
     ][] = [
       [
         e.highTempTarget,
         e.highTempOre,
         `heated in-world past ${celsius(e.highTemp + buffer)} °C`,
         e.highTemp + buffer > EXTREME_HOT_K,
+        e.highTemp + buffer,
+        1,
       ],
       [
         e.lowTempTarget,
         e.lowTempOre,
         `cooled in-world below ${celsius(e.lowTemp - buffer)} °C`,
         e.lowTemp - buffer < EXTREME_COLD_K,
+        e.lowTemp - buffer,
+        -1,
       ],
     ]
-    for (const [target, ore, note, extreme] of transitions) {
+    for (const [target, ore, note, extreme, at, direction] of transitions) {
       if (!target || target === 'Vacuum' || target === 'Void' || !elementIds.has(target)) continue
       const outputs: Flow[] = []
       if (ore && ore.massFraction > 0 && elementIds.has(ore.id)) {
@@ -239,6 +246,10 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
       } else {
         outputs.push({ tag: target, amount: 1 })
       }
+      // What comes out is at the temperature of the change, and keeps changing phase until it
+      // is stable there: Bleach Stone melts at 672 °C into chlorine, which boils at -34 °C, so
+      // what you actually get is chlorine gas.
+      settle(outputs, at, direction)
       add({
         kind: 'transition',
         via: label(e.id),
@@ -263,6 +274,42 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         notes: ['off-gasses when exposed'],
       })
     }
+  }
+
+  /**
+   * Replaces each output element by what it becomes at temperature `at` (heating when
+   * `direction` is 1, cooling when -1), following the element table until the product is
+   * stable, with each step's ore split applied.
+   */
+  function settle(outputs: Flow[], at: number, direction: 1 | -1) {
+    for (let guard = 0; guard < 6; guard++) {
+      let changed = false
+      for (const f of [...outputs]) {
+        const el = byId.get(f.tag)
+        if (!el) continue
+        const next =
+          direction === 1 && el.highTemp + buffer <= at
+            ? { target: el.highTempTarget, ore: el.highTempOre }
+            : direction === -1 && el.lowTemp - buffer >= at
+              ? { target: el.lowTempTarget, ore: el.lowTempOre }
+              : null
+        if (!next || !next.target || !elementIds.has(next.target) || next.target === f.tag) continue
+        outputs.splice(outputs.indexOf(f), 1)
+        const fraction =
+          next.ore && next.ore.massFraction > 0 && elementIds.has(next.ore.id)
+            ? next.ore.massFraction
+            : 0
+        if (fraction > 0) merge(outputs, next.ore!.id, f.amount * fraction)
+        merge(outputs, next.target, f.amount * (1 - fraction))
+        changed = true
+      }
+      if (!changed) return
+    }
+  }
+  function merge(outputs: Flow[], tag: string, amount: number) {
+    const found = outputs.find((f) => f.tag === tag)
+    if (found) found.amount += amount
+    else outputs.push({ tag, amount })
   }
 
   // Food left out spoils into a Rot Pile of the same mass, and a Rot Pile decomposes into
