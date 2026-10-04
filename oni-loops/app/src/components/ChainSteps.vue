@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { qty, unitOf } from '../model'
 import { fmt, stepLabel } from '../model/graph'
 import type { Input, Node } from '../model/chains'
@@ -27,6 +27,8 @@ interface RunRow {
   rail: Rail
   /** For a feedback row: the share of the product fed back into this step. */
   input?: Input
+  /** Position in the card, so the arrows can find the row's element. */
+  idx?: number
 }
 type Row =
   | RunRow
@@ -59,10 +61,23 @@ interface Run {
   rows: RunRow[]
 }
 
+/** Step rows by node (the line that names a step's leftovers) and the fed rows, for drawing arrows. */
+const stepRowOf = new Map<Node, number>()
+const feedbackRows: RunRow[] = []
+
 const runs = computed<(Run | Row)[]>(() => {
   const all = rows(props.root, true)
   const out: (Run | Row)[] = []
   let current: RunRow[] = []
+  let idx = 0
+  stepRowOf.clear()
+  feedbackRows.length = 0
+  for (const r of all) {
+    if (r.kind === 'gap' || r.kind === 'join') continue
+    r.idx = idx++
+    if (r.kind === 'step') stepRowOf.set(r.node, r.idx)
+    if (r.kind === 'feedback') feedbackRows.push(r)
+  }
   const flush = () => {
     if (!current.length) return
     const dots = current.map((r, i) => (r.kind !== 'step' ? i : -1)).filter((i) => i >= 0)
@@ -91,6 +106,86 @@ const runs = computed<(Run | Row)[]>(() => {
 function isRun(x: Run | Row): x is Run {
   return 'rows' in x
 }
+
+/*
+ * Arrows from where something is made back to where the chain uses it: the product down to
+ * the run that feeds on it, or a step's leftovers to the step that takes them. Each is a
+ * curve bulging out to the right of the text, like a closing bracket, measured from the
+ * rendered rows so it fits whatever height the chain has.
+ */
+const stepsEl = ref<HTMLElement | null>(null)
+const rowsEl = ref<HTMLElement | null>(null)
+const arrows = ref<{ d: string; head: string; kind: 'loop' | 'reuse'; hue: number }[]>([])
+/** Arrows share one bulge and tell apart by colour. */
+const ARROW_COLOURS = 5
+const overlay = ref({ width: 0, height: 0 })
+
+function drawArrows() {
+  const root = stepsEl.value
+  if (!root) return
+  const box = root.getBoundingClientRect()
+  // Assign only on change: a redraw that changes nothing must not trigger another render.
+  const size = { width: box.width, height: box.height }
+  if (size.width !== overlay.value.width || size.height !== overlay.value.height)
+    overlay.value = size
+  const rowEl = (i: number | undefined) =>
+    i === undefined ? null : root.querySelector<HTMLElement>(`[data-row="${i}"]`)
+  const result = root.querySelector<HTMLElement>('.result')
+  const middle = (el: HTMLElement) => {
+    const inner = el.querySelector<HTMLElement>('.amount, .how') ?? el
+    const r = inner.getBoundingClientRect()
+    return r.top + r.height / 2 - box.top
+  }
+  const items: { from: HTMLElement; to: HTMLElement; kind: 'loop' | 'reuse' }[] = []
+  for (const row of feedbackRows) {
+    const to = rowEl(row.idx)
+    const from = row.input!.feedback ? result : rowEl(stepRowOf.get(row.input!.reusedFrom?.[0]!))
+    if (from && to) items.push({ from, to, kind: row.input!.feedback ? 'loop' : 'reuse' })
+  }
+  if (!items.length) {
+    if (arrows.value.length) arrows.value = []
+    return
+  }
+  // One gutter for every arrow, just right of the rows' block, which is only as wide as
+  // its longest line; on a narrow screen that is the whole width and the arrows hug the edge.
+  const rowsBox = (rowsEl.value ?? root).getBoundingClientRect()
+  const gutter = Math.min(rowsBox.right - box.left + 12, box.width - 60)
+  items.sort(
+    (a, b) => Math.abs(middle(a.from) - middle(a.to)) - Math.abs(middle(b.from) - middle(b.to)),
+  )
+  const next = items.map((it, k) => {
+    const y0 = middle(it.from)
+    const y1 = middle(it.to)
+    // A short straight lead at each end, then the bow: the line leaves and arrives level, so
+    // the head sits square on it. The head is drawn as geometry rather than a marker so it
+    // keeps its size and direction whatever the bow does.
+    const lead = gutter + 14
+    const x1 = gutter + 48
+    const tip = gutter
+    return {
+      d: `M ${gutter} ${y0} H ${lead} C ${x1} ${y0}, ${x1} ${y1}, ${lead} ${y1} H ${tip + 9}`,
+      head: `M ${tip} ${y1} L ${tip + 12} ${y1 - 5.5} L ${tip + 12} ${y1 + 5.5} Z`,
+      kind: it.kind,
+      hue: k % ARROW_COLOURS,
+    }
+  })
+  if (JSON.stringify(next) !== JSON.stringify(arrows.value)) arrows.value = next
+}
+
+let observer: ResizeObserver | undefined
+onMounted(() => {
+  drawArrows()
+  if (typeof ResizeObserver !== 'undefined' && stepsEl.value) {
+    observer = new ResizeObserver(() => drawArrows())
+    observer.observe(stepsEl.value)
+  }
+})
+watch(
+  () => [props.rate, props.root],
+  () => nextTick(drawArrows),
+)
+watch(runs, () => nextTick(drawArrows))
+onBeforeUnmount(() => observer?.disconnect())
 
 function at(amount: number): number {
   return amount * props.rate
@@ -208,71 +303,93 @@ function doer(n: Node): string | undefined {
 </script>
 
 <template>
-  <div class="steps">
-    <template v-for="(block, b) in runs" :key="b">
-      <div v-if="!isRun(block) && block.kind === 'gap'" class="gap" />
-      <div v-else-if="!isRun(block)" class="join" aria-hidden="true" />
-      <ol v-else class="run">
-        <li v-for="(row, r) in block.rows" :key="r" :class="[row.kind, 'rail-' + row.rail]">
-          <template v-if="row.kind === 'step'">
-            <span class="how" :class="{ source: row.node.inputs.length === 0 }"
-              ><TagIcon v-if="doer(row.node)" :tag="doer(row.node)!" />{{
-                stepText(row.node)
-              }}</span
-            ><span v-if="countText(row.node)" class="count"> ({{ countText(row.node) }})</span
-            ><template v-if="gathered(row.node)">{{
-              ' takes ' + gathered(row.node) + ' from above'
-            }}</template
-            ><template v-if="outside(row.node).length"
-              >{{ gathered(row.node) ? ' plus ' : ' with '
-              }}<template v-for="(i, k) in outside(row.node)" :key="i.tag"
-                ><template v-if="k > 0">{{
-                  k === outside(row.node).length - 1 ? ' and ' : ', '
-                }}</template
-                ><span v-if="i.feedback" class="extra feedback"
-                  >{{ inputText(i) }} fed back from what this makes</span
-                ><span
-                  v-else
-                  class="extra"
-                  :class="'t-' + i.tier"
-                  :title="`${TIER_LABEL[i.tier]}: ${tiers.reason(i.tag)}`"
-                  >{{ inputText(i) }}</span
-                ></template
-              ></template
-            ><template v-if="leaving(row.node)">, leaving {{ leaving(row.node) }}</template
-            >.<template v-if="needs(row.node.process.needs.extras)">{{
-              ' ' + needs(row.node.process.needs.extras)
-            }}</template
-            ><span
-              v-if="row.node.alternatives?.length"
-              class="alt"
-              :title="row.node.alternatives.map((p) => stepLabel(p)).join(', ')"
-              >Or {{ alternatives(row.node) }}.</span
-            >
-          </template>
-          <template v-else-if="row.kind === 'feedback'">
-            <span class="amount num"
-              ><TagIcon :tag="row.input!.tag" />{{
-                row.input!.feedback
-                  ? inputText(row.input!)
-                  : qty(at(row.input!.reused!), row.input!.tag)
-              }}</span
-            >
-            <span class="fed-back">{{
-              row.input!.feedback ? 'from what this loop makes' : 'left by ' + leftBy(row.input!)
-            }}</span>
-          </template>
-          <span v-else class="amount num"
-            ><TagIcon :tag="row.node.output" />{{ qty(at(row.node.amount), row.node.output) }}</span
+  <div ref="stepsEl" class="steps">
+    <svg
+      v-if="arrows.length"
+      class="arrows"
+      :width="overlay.width"
+      :height="overlay.height"
+      :viewBox="`0 0 ${overlay.width} ${overlay.height}`"
+      aria-hidden="true"
+    >
+      <g v-for="(a, k) in arrows" :key="k" :class="'hue-' + a.hue">
+        <path :d="a.d" class="arrow" />
+        <path :d="a.head" class="head" />
+      </g>
+    </svg>
+    <div ref="rowsEl" class="rows">
+      <template v-for="(block, b) in runs" :key="b">
+        <div v-if="!isRun(block) && block.kind === 'gap'" class="gap" />
+        <div v-else-if="!isRun(block)" class="join" aria-hidden="true" />
+        <ol v-else class="run">
+          <li
+            v-for="(row, r) in block.rows"
+            :key="r"
+            :class="[row.kind, 'rail-' + row.rail]"
+            :data-row="row.idx"
           >
-        </li>
-      </ol>
-    </template>
-    <p class="result">
-      <span class="amount num"
-        ><TagIcon :tag="root.output" />{{ qty(at(root.amount), root.output) }}</span
-      >
-    </p>
+            <template v-if="row.kind === 'step'">
+              <span class="how" :class="{ source: row.node.inputs.length === 0 }"
+                ><TagIcon v-if="doer(row.node)" :tag="doer(row.node)!" />{{
+                  stepText(row.node)
+                }}</span
+              ><span v-if="countText(row.node)" class="count"> ({{ countText(row.node) }})</span
+              ><template v-if="gathered(row.node)">{{
+                ' takes ' + gathered(row.node) + ' from above'
+              }}</template
+              ><template v-if="outside(row.node).length"
+                >{{ gathered(row.node) ? ' plus ' : ' with '
+                }}<template v-for="(i, k) in outside(row.node)" :key="i.tag"
+                  ><template v-if="k > 0">{{
+                    k === outside(row.node).length - 1 ? ' and ' : ', '
+                  }}</template
+                  ><span v-if="i.feedback" class="extra feedback"
+                    >{{ inputText(i) }} fed back from what this makes</span
+                  ><span
+                    v-else
+                    class="extra"
+                    :class="'t-' + i.tier"
+                    :title="`${TIER_LABEL[i.tier]}: ${tiers.reason(i.tag)}`"
+                    >{{ inputText(i) }}</span
+                  ></template
+                ></template
+              ><template v-if="leaving(row.node)">, leaving {{ leaving(row.node) }}</template
+              >.<template v-if="needs(row.node.process.needs.extras)">{{
+                ' ' + needs(row.node.process.needs.extras)
+              }}</template
+              ><span
+                v-if="row.node.alternatives?.length"
+                class="alt"
+                :title="row.node.alternatives.map((p) => stepLabel(p)).join(', ')"
+                >Or {{ alternatives(row.node) }}.</span
+              >
+            </template>
+            <template v-else-if="row.kind === 'feedback'">
+              <span class="amount num"
+                ><TagIcon :tag="row.input!.tag" />{{
+                  row.input!.feedback
+                    ? inputText(row.input!)
+                    : qty(at(row.input!.reused!), row.input!.tag)
+                }}</span
+              >
+              <span class="fed-back">{{
+                row.input!.feedback ? 'from what this loop makes' : 'left by ' + leftBy(row.input!)
+              }}</span>
+            </template>
+            <span v-else class="amount num"
+              ><TagIcon :tag="row.node.output" />{{
+                qty(at(row.node.amount), row.node.output)
+              }}</span
+            >
+          </li>
+        </ol>
+      </template>
+      <p class="result">
+        <span class="amount num"
+          ><TagIcon :tag="root.output" />{{ qty(at(root.amount), root.output) }}</span
+        >
+      </p>
+    </div>
   </div>
 </template>
 
@@ -280,7 +397,48 @@ function doer(n: Node): string | undefined {
 .steps {
   --x: 0.5rem; /* the rail's column */
   --dot-y: 0.8rem; /* dot centre, from the top of a material row */
+  position: relative;
+}
+/* The rows take only the width of their longest line, so the arrows can sit right beside them. */
+.rows {
   display: grid;
+  width: fit-content;
+  max-width: 100%;
+}
+/* The arrows live over the rows and never catch the pointer. */
+.arrows {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.arrow {
+  fill: none;
+  stroke: var(--arrow);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.head {
+  fill: var(--arrow);
+  stroke: var(--arrow);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+/* Arrows share one bulge and tell apart by colour. */
+.hue-0 {
+  --arrow: var(--good);
+}
+.hue-1 {
+  --arrow: var(--accent);
+}
+.hue-2 {
+  --arrow: var(--warn);
+}
+.hue-3 {
+  --arrow: #c89bff;
+}
+.hue-4 {
+  --arrow: #ff8fa3;
 }
 .run {
   list-style: none;

@@ -45,7 +45,7 @@ const costText = computed(() => {
     // A geyser the colony has not listed is the usual reason a source-only chain is out of reach.
     const geysers = nodesOf(c)
       .filter((n) => n.process.kind === 'geyser' && !store.geysers.has(n.process.viaId))
-      .map((n) => [n.process.via, ...(n.alternatives ?? [])].join(' or '))
+      .map((n) => [n.process.via, ...(n.alternatives ?? []).map((p) => p.via)].join(' or '))
     if (geysers.length) return `needs a ${list(geysers)}, which your colony has not found.`
     return c.worstTier === 'local' ? "draws on your asteroid's terrain." : 'see the steps.'
   }
