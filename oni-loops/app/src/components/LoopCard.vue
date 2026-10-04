@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { label } from '../data/load'
 import { fmt, stepLabel } from '../model/graph'
-import { isPositive, type Loop, type Step } from '../model/search'
+import { effectiveRatio, isPositive, type Loop, type Step } from '../model/search'
 import { TIER_LABEL, type Tiers } from '../model/tiers'
 
 const props = defineProps<{ loop: Loop; target: string; tiers: Tiers }>()
@@ -22,10 +22,10 @@ function needsOf(s: Step): string[] {
 <template>
   <article class="loop" :class="{ positive }">
     <header>
-      <span class="ratio">×{{ fmt(loop.ratio) }}</span>
+      <span class="ratio">×{{ fmt(effectiveRatio(loop)) }}</span>
       <span class="tier">{{ positive ? 'net-positive loop' : loop.topUp ? 'closes with a top-up' : 'top-up loop' }}</span>
       <span v-if="!loop.primary" class="side" :title="`At one step ${label(target)}'s share of what the machine eats is only ${fmt(loop.minShare * 100)}%; the rest is the real cost.`">side-stream</span>
-      <span v-if="!positive && loop.topUp" class="shortfall">returns {{ fmt(loop.ratio) }} per 1 {{ label(target) }} on its own; feed {{ fmt(loop.topUp.amount) }} extra {{ label(loop.topUp.tag) }} ({{ TIER_LABEL[loop.topUp.tier] }}) per {{ label(target) }} into step {{ loop.topUp.step + 1 }} and it returns 1</span>
+      <span v-if="!positive && loop.topUp" class="shortfall">with {{ fmt(loop.topUp.amount) }} extra {{ label(loop.topUp.tag) }} ({{ TIER_LABEL[loop.topUp.tier] }}) per {{ label(target) }} fed into step {{ loop.topUp.step + 1 }}; ×{{ fmt(loop.ratio) }} on its own</span>
       <span v-else-if="!positive" class="shortfall">returns {{ fmt(loop.ratio) }} per 1 {{ label(target) }}; top up {{ fmt(1 - loop.ratio) }} elsewhere</span>
     </header>
     <ol class="chain">
