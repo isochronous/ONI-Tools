@@ -55,6 +55,8 @@ if "--no-icons" not in sys.argv and os.path.isdir(icons):
     wanted = {e["id"] for e in d["elements"] if not e["disabled"]}
     wanted |= {b["id"] for b in d["buildings"]} | {f for r in d["recipes"] for f in r["fabricators"]}
     wanted |= {c["id"] for c in d["critters"]} | {p["id"] for p in d["plants"]}
+    wanted |= {f["id"] for f in d.get("features", [])}
+    wanted |= {f["vent"]["drill"]["building"] for f in d.get("features", []) if f.get("vent") and f["vent"].get("drill")}
     wanted |= {it["id"] for it in d["items"] if '"%s"' % it["id"] in body}
     # The icon folder holds the latest run only, and a base-game run lacks Spaced Out's things,
     # so icons already imported are kept; the manifest is what the app wants and has.

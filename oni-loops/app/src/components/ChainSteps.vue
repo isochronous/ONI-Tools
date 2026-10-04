@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { qty, unitOf } from '../model'
+import { label, qty, unitOf } from '../model'
 import { fmt, stepLabel } from '../model/graph'
 import type { Input, Node } from '../model/chains'
 import type { Process } from '../model/graph'
@@ -275,6 +275,10 @@ function countText(n: Node, process: Process = n.process): string {
       return whole === 1 ? '1 plant' : `${whole} plants`
     case 'geyser':
       return whole === 1 ? '1 geyser' : `${whole} geysers`
+    case 'feature': {
+      const name = label(process.needs.feature!)
+      return whole === 1 ? `1 ${name}` : `${whole} ${name}s`
+    }
   }
 }
 

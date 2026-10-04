@@ -61,6 +61,19 @@ function geyserName(id: string) {
   return gameData.names['GeyserGeneric_' + id] ?? id
 }
 
+/** "Oil Reservoirs", from the feature's prefab id. */
+function featurePlural(id: string) {
+  return (gameData.names[id] ?? id) + 's'
+}
+
+/** "Terra has 3", "Aquatic Classic has up to 6". */
+function featureHint(f: { min: number; max: number; worlds: string[] }) {
+  const where = f.worlds.join(' and ')
+  if (f.min === f.max) return `${where} has ${f.min}.`
+  if (f.min === 0) return `${where} has up to ${f.max}.`
+  return `${where} has ${f.min} to ${f.max}.`
+}
+
 function has(id: string) {
   return store.critters === null || store.critters.has(id)
 }
@@ -117,6 +130,19 @@ function has(id: string) {
             </label>
           </div>
         </template>
+        <label v-for="[id, f] in store.guaranteedFeatureCounts" :key="id" class="count feature">
+          <input
+            :value="store.features.get(id) ?? 0"
+            type="number"
+            min="0"
+            max="99"
+            step="1"
+            class="num"
+            :aria-label="featurePlural(id) + ' found'"
+            @input="store.setFeature(id, Number(($event.target as HTMLInputElement).value))"
+          />
+          <span class="hint">{{ featurePlural(id) }} found. {{ featureHint(f) }}</span>
+        </label>
       </template>
     </div>
 
@@ -347,5 +373,8 @@ select {
 }
 .count .hint {
   margin: 0;
+}
+.count.feature {
+  margin-top: 0.6rem;
 }
 </style>

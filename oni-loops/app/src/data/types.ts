@@ -104,6 +104,27 @@ export interface BuildingData {
   inputConduit?: string
   /** Pipe the building sends its product down, when it has one; otherwise it drops it in the world. */
   outputConduit?: string
+  /** The terrain feature the building has to be built on (an Oil Well on an Oil Reservoir), by prefab id. */
+  attachesTo?: string
+}
+
+/**
+ * A terrain feature a building sits on: an Oil Reservoir, or a Thermal Gas Fissure. Worlds
+ * place them through the same template rules as geysers, listed under `geyserRules`.
+ */
+export interface FeatureData {
+  id: string
+  name: string
+  dlc: DlcRestriction
+  /** A fissure: it bubbles gas while it builds up, then blocks until a drill clears it, dropping a solid. */
+  vent?: {
+    bubbleElement: string
+    bubbleRatePerSecond: number
+    buildUpSeconds: number
+    solidElement: string
+    solidMass: number
+    drill: { building: string; input: string; ratePerSecond: number; seconds: number }
+  }
 }
 
 export interface DietData {
@@ -189,7 +210,10 @@ export interface GeyserRule {
   rangeMin: number
   rangeMax: number
   times: number
-  /** Each template and the geyser prefabs it contains ("GeyserGeneric_molten_iron"; plain "GeyserGeneric" = seed-random type). */
+  /**
+   * Each template and the geyser prefabs it contains ("GeyserGeneric_molten_iron"; plain
+   * "GeyserGeneric" = seed-random type), plus terrain features buildings sit on ("OilWell").
+   */
   templates: { template: string; geysers: string[] }[]
 }
 
@@ -254,6 +278,8 @@ export interface GameData {
   critters: CritterData[]
   plants: PlantData[]
   geysers: GeyserData[]
+  /** Terrain features buildings sit on; older dumps lack it. */
+  features?: FeatureData[]
   worldgen: WorldData[]
   clusters: ClusterData[]
   spacePois: SpacePoiData[]

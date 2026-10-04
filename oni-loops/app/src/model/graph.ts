@@ -46,6 +46,8 @@ export interface Needs {
   critter?: string
   plant?: string
   building?: string
+  /** A terrain feature the building has to sit on (an Oil Reservoir under an Oil Well), by prefab id. */
+  feature?: string
   /** e.g. radbolts, power, a specific atmosphere */
   extras?: string[]
 }
@@ -58,8 +60,8 @@ export interface Needs {
 export interface Throughput {
   /** Runs of the process one instance completes per cycle at full uptime. */
   runsPerCycle: number
-  /** What one instance is. */
-  instance: 'building' | 'critter' | 'plant' | 'duplicant' | 'geyser'
+  /** What one instance is; a feature is a terrain feature the colony has found (an Oil Reservoir). */
+  instance: 'building' | 'critter' | 'plant' | 'duplicant' | 'geyser' | 'feature'
   /** A Duplicant stands at the building for the whole run (a Rock Crusher), so its time is spent too. */
   operated?: boolean
 }
@@ -94,6 +96,8 @@ export interface Process {
   incidental?: boolean
   /** Time one run takes, in seconds, when known. */
   seconds?: number
+  /** The output the mechanism is for even when a by-product outweighs it (a fissure's gas beside its sulfur). */
+  primaryOutput?: string
 }
 
 export interface Graph {
@@ -437,6 +441,7 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
 
   // Continuous converters: rates per second on both sides, normalised to per second. A
   // building the game has no name for is not in the build menu, so it cannot be used.
+  const featureIds = new Set((d.features ?? []).map((f) => f.id))
   for (const b of d.buildings) {
     if (unnamed(b.name)) continue
     const inputs = b.inputs.map((f) => classInput(f.tag, f.rate ?? f.amountPerUse ?? 0))
@@ -449,14 +454,20 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
     // a bladder fills its 100 points; a continuous one runs its per-second amounts 600 times
     // a cycle.
     const usesPerCycle = ((d.tuning.bladderPerSecond ?? 100 / cycle) * cycle) / 100
+    // A building on a terrain feature (an Oil Well on an Oil Reservoir) is one per feature
+    // found, not one of as many as the colony cares to build.
+    const feature = b.attachesTo && featureIds.has(b.attachesTo) ? b.attachesTo : undefined
     const throughput: Throughput = perUse
       ? { runsPerCycle: usesPerCycle, instance: 'duplicant' }
-      : { runsPerCycle: cycle, instance: 'building' }
+      : { runsPerCycle: cycle, instance: feature ? 'feature' : 'building' }
     // An input the building only accepts hot enough (the Steam Turbine's 125 C steam): steam
     // straight off boiling water sits at the boiling point and has to be heated further.
-    const hot = b.inputs
+    const extras = b.inputs
       .filter((f) => f.minTemperatureK !== undefined)
       .map((f) => `${label(f.tag)} at ${celsius(f.minTemperatureK!)} °C or hotter`)
+    // An Oil Well stores the gas it gives off until a Duplicant lets it out, then stalls.
+    if (b.outputs.some((f) => f.via === 'OilWellCap'))
+      extras.push('a Duplicant lets its gas out now and then')
     add({
       kind: 'converter',
       via: b.name,
@@ -464,7 +475,7 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
       inputs: inputs.filter((f) => f.amount > 0),
       outputs,
       dlc: b.dlc,
-      needs: { building: b.id, extras: hot.length ? hot : undefined },
+      needs: { building: b.id, feature, extras: extras.length ? extras : undefined },
       pipedOutput: b.outputConduit !== undefined,
       incidental: inputs.length === 0 || undefined,
       throughput,
@@ -774,6 +785,29 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
       dlc: g.dlc,
       needs: {},
       notes: [`${fmt(g.minRatePerCycle)}–${fmt(g.maxRatePerCycle)} kg/cycle average`],
+    })
+  }
+  // A fissure bubbles gas while it builds up, then blocks until its drill clears it, which
+  // drops a solid: one run is a build-up and a drilling, with the gas as its point.
+  for (const f of d.features ?? []) {
+    const v = f.vent
+    if (!v || !elementIds.has(v.bubbleElement)) continue
+    const seconds = v.buildUpSeconds + v.drill.seconds
+    add({
+      kind: 'converter',
+      via: d.names[v.drill.building] ?? f.name,
+      viaId: v.drill.building,
+      inputs: [{ tag: v.drill.input, amount: v.drill.ratePerSecond * v.drill.seconds }],
+      outputs: [
+        { tag: v.bubbleElement, amount: v.bubbleRatePerSecond * v.buildUpSeconds },
+        { tag: v.solidElement, amount: v.solidMass },
+      ],
+      dlc: f.dlc,
+      needs: { building: v.drill.building, feature: f.id },
+      throughput: { runsPerCycle: cycle / seconds, instance: 'feature' },
+      primaryOutput: v.bubbleElement,
+      notes: [`per eruption: ${fmt(v.buildUpSeconds / cycle)} cycles of gas, then drilled clear`],
+      seconds,
     })
   }
   for (const w of d.worldgen) {

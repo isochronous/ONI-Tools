@@ -70,6 +70,43 @@ export function guaranteedGeysers(
   return out
 }
 
+/**
+ * Terrain features buildings sit on (Oil Reservoirs, fissures) that a cluster's worlds place,
+ * by prefab id, with how many: the guaranteed count as `min`, and with the rules that only
+ * try, how many at most.
+ */
+export function guaranteedFeatures(
+  d: GameData,
+  cluster: ClusterData | null,
+): Map<string, { min: number; max: number; worlds: string[] }> {
+  const out = new Map<string, { min: number; max: number; worlds: string[] }>()
+  if (!cluster) return out
+  const featureIds = new Set((d.features ?? []).map((f) => f.id))
+  for (const world of worldsOf(d, cluster)) {
+    for (const rule of world.geyserRules) {
+      for (const id of featureIds) {
+        // Every template of the rule has to place it, or the count is a coin flip.
+        if (!rule.templates.every((t) => t.geysers.includes(id))) continue
+        const [min, max] = ruleCount(
+          rule.listRule,
+          rule.someCount,
+          rule.moreCount,
+          rule.rangeMin,
+          rule.rangeMax,
+          rule.times,
+          rule.templates.length,
+        )
+        const entry = out.get(id) ?? { min: 0, max: 0, worlds: [] }
+        entry.min += min
+        entry.max += max
+        if (!entry.worlds.includes(world.name)) entry.worlds.push(world.name)
+        out.set(id, entry)
+      }
+    }
+  }
+  return out
+}
+
 /** How many seed-random generic geysers each world of the cluster rolls. */
 export function randomGeyserSlots(
   d: GameData,
@@ -96,20 +133,33 @@ function ruleCount(
   times: number,
   templates: number,
 ): [number, number] {
+  // Worldgen applies the whole rule `times` times, so each count multiplies.
+  const n = Math.max(1, times)
   switch (rule) {
     case 'GuaranteeOne':
-      return [1, 1]
+      return [n, n]
     case 'GuaranteeAll':
-      return [templates, templates]
+      return [templates * n, templates * n]
     case 'GuaranteeSome':
-      return [some, some]
+      return [some * n, some * n]
     case 'GuaranteeSomeTryMore':
-      return [some, some + more]
+      return [some * n, (some + more) * n]
     case 'GuaranteeRange':
-      return [rangeMin, rangeMax]
+      return [rangeMin * n, rangeMax * n]
+    case 'TryAll':
+      return [0, templates * n]
+    case 'TrySome':
+      return [0, some * n]
+    case 'TryRange':
+      return [0, rangeMax * n]
     default:
-      return [0, times || 1]
+      return [0, n]
   }
+}
+
+/** A building on a terrain feature (an Oil Well) only runs where the colony has found one. */
+function hasFeature(p: Process, colony: Colony): boolean {
+  return !p.needs.feature || (colony.features.get(p.needs.feature) ?? 0) > 0
 }
 
 export function worldsOf(d: GameData, cluster: ClusterData): WorldData[] {
@@ -190,7 +240,8 @@ export function computeTiers(
       p.kind !== 'worldgen' &&
       p.kind !== 'geyser' &&
       p.kind !== 'starmap' &&
-      !isAvailable(p, colony)
+      !isAvailable(p, colony) &&
+      hasFeature(p, colony)
     )
       for (const o of p.outputs)
         if (!direct.has(o.tag) || TIER_ORDER[direct.get(o.tag)!] > TIER_ORDER.renewable)
@@ -201,7 +252,8 @@ export function computeTiers(
       p.kind !== 'worldgen' &&
       p.kind !== 'geyser' &&
       p.kind !== 'starmap' &&
-      !isAvailable(p, colony),
+      !isAvailable(p, colony) &&
+      hasFeature(p, colony),
   )
   let changed = true
   while (changed) {

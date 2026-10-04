@@ -60,6 +60,7 @@ namespace OniDataDump
 				["items"] = Items(),
 				["recipes"] = Recipes(),
 				["buildings"] = Buildings(),
+				["features"] = Features(),
 				["fabricators"] = Fabricators(),
 				["critters"] = Critters(),
 				["plants"] = Plants(),
@@ -457,6 +458,10 @@ namespace OniDataDump
 					inputs.Add(new JObject { ["tag"] = "Water", ["amountPerUse"] = flush.massConsumedPerUse, ["via"] = "FlushToilet" });
 					outputs.Add(new JObject { ["tag"] = "DirtyWater", ["amountPerUse"] = flush.massEmittedPerUse, ["via"] = "FlushToilet" });
 				}
+				// An Oil Well stores natural gas as it pumps, released when a Duplicant depressurises it.
+				OilWellCap well = go.GetComponent<OilWellCap>();
+				if (well != null)
+					outputs.Add(new JObject { ["tag"] = well.gasElement.ToString(), ["rate"] = well.addGasRate, ["via"] = "OilWellCap" });
 				if (inputs.Count == 0 && outputs.Count == 0)
 					continue;
 				usedBuildings.Add(def.PrefabID);
@@ -474,6 +479,97 @@ namespace OniDataDump
 					o["inputConduit"] = def.InputConduitType.ToString();
 				if (def.OutputConduitType != ConduitType.None)
 					o["outputConduit"] = def.OutputConduitType.ToString();
+				// A building that has to sit on a terrain feature (an Oil Well on an Oil Reservoir).
+				string host = def.AttachmentSlotTag.IsValid ? FeatureFor(def.AttachmentSlotTag) : null;
+				if (host != null)
+					o["attachesTo"] = host;
+				arr.Add(o);
+			}
+			return arr;
+		}
+
+		/// <summary>
+		/// Terrain features buildings attach to (an Oil Reservoir, a Thermal Gas Fissure): placed
+		/// entities with hard points for a building, as opposed to buildings with hard points.
+		/// </summary>
+		private static List<GameObject> featurePrefabs;
+
+		private static List<GameObject> FeaturePrefabs()
+		{
+			if (featurePrefabs == null)
+				featurePrefabs = Assets.GetPrefabsWithComponent<BuildingAttachPoint>()
+					.Where(go => go.GetComponent<Building>() == null && go.GetComponent<KPrefabID>() != null)
+					.ToList();
+			return featurePrefabs;
+		}
+
+		private static bool IsFeature(string id)
+		{
+			return FeaturePrefabs().Any(go => go.GetComponent<KPrefabID>().PrefabTag.Name == id);
+		}
+
+		/// <summary>The feature prefab with a hard point for this attachment slot, if any.</summary>
+		private static string FeatureFor(Tag slot)
+		{
+			foreach (GameObject go in FeaturePrefabs())
+			{
+				BuildingAttachPoint ap = go.GetComponent<BuildingAttachPoint>();
+				if ((ap.points ?? new BuildingAttachPoint.HardPoint[0]).Any(pt => pt.attachableType == slot))
+					return go.GetComponent<KPrefabID>().PrefabTag.Name;
+			}
+			return null;
+		}
+
+		/// <summary>
+		/// Terrain features buildings sit on, with what a fissure does: it bubbles gas while it
+		/// builds up, then blocks until its drill (the building on it) clears it, which drops a
+		/// solid. Where worlds place them is in each world's template rules, like geysers.
+		/// </summary>
+		private static JArray Features()
+		{
+			var arr = new JArray();
+			foreach (GameObject go in FeaturePrefabs())
+			{
+				KPrefabID id = go.GetComponent<KPrefabID>();
+				var o = new JObject
+				{
+					["id"] = id.PrefabTag.Name,
+					["name"] = Plain(go.GetProperName()),
+					["dlc"] = Restrictions(id),
+				};
+				UnderwaterVent.Def vent = go.GetComponent<StateMachineController>()?.GetDef<UnderwaterVent.Def>();
+				if (vent != null)
+				{
+					UnderwaterVent.Data data = vent.data;
+					var slots = (go.GetComponent<BuildingAttachPoint>().points ?? new BuildingAttachPoint.HardPoint[0]).Select(pt => pt.attachableType).ToList();
+					JObject drill = null;
+					foreach (BuildingDef def in Assets.BuildingDefs)
+					{
+						if (def.BuildingComplete == null || !slots.Contains(def.AttachmentSlotTag))
+							continue;
+						UnderwaterVentDrill.Def dd = def.BuildingComplete.GetComponent<StateMachineController>()?.GetDef<UnderwaterVentDrill.Def>();
+						if (dd == null)
+							continue;
+						usedBuildings.Add(def.PrefabID);
+						drill = new JObject
+						{
+							["building"] = def.PrefabID,
+							["input"] = dd.DiamondTag.ToString(),
+							["ratePerSecond"] = dd.DiamondConsumptionRate,
+							["seconds"] = dd.WorkDuration,
+						};
+						break;
+					}
+					o["vent"] = new JObject
+					{
+						["bubbleElement"] = data.BubbleElement.ToString(),
+						["bubbleRatePerSecond"] = data.BubbleMassRate,
+						["buildUpSeconds"] = data.BuildUpDuration,
+						["solidElement"] = data.SolidElement.ToString(),
+						["solidMass"] = data.SolidMass,
+						["drill"] = drill,
+					};
+				}
 				arr.Add(o);
 			}
 			return arr;
@@ -700,52 +796,91 @@ namespace OniDataDump
 		}
 
 		/// <summary>
-		/// A world's template spawn rules that place geysers, vents, or volcanoes, with the
-		/// geyser prefabs each named template contains, so the app knows which geyser types a
-		/// world is guaranteed (GuaranteeX rules) or may get (TryX rules), and how many. The
-		/// generic random geysers ("geysers/generic") are reported as such; their types are
-		/// decided by the seed.
+		/// A world's template spawn rules that place geysers, vents, volcanoes, or terrain
+		/// features buildings sit on (Oil Reservoirs), with the prefabs each named template
+		/// contains, so the app knows which a world is guaranteed (GuaranteeX rules) or may get
+		/// (TryX rules), and how many. The generic random geysers ("geysers/generic") are
+		/// reported as such; their types are decided by the seed. A subworld's own template
+		/// rules count too, and a subworld feature that spawns such an entity (the oil patch
+		/// feature holding one Oil Reservoir) is reported as a rule guaranteeing one.
 		/// </summary>
 		private static JArray GeyserRules(ProcGen.World world)
 		{
 			var arr = new JArray();
 			foreach (var rule in world.worldTemplateRules ?? new List<ProcGen.World.TemplateSpawnRules>())
+				AddRule(arr, rule);
+			foreach (var subworldFile in world.subworldFiles ?? new List<ProcGen.WeightedSubworldName>())
 			{
-				var templates = new JArray();
-				foreach (string name in rule.names ?? new List<string>())
-				{
-					var geysers = new JArray();
-					if (name == "geysers/generic")
-						geysers.Add("GeyserGeneric");
-					else
-					{
-						TemplateContainer template = null;
-						try { template = TemplateCache.GetTemplate(name); } catch { }
-						if (template != null)
-						{
-							foreach (var prefab in (template.otherEntities ?? new List<TemplateClasses.Prefab>()).Concat(template.buildings ?? new List<TemplateClasses.Prefab>()))
-								if (prefab.id != null && (prefab.id.StartsWith("GeyserGeneric") || prefab.id.Contains("Geyser") || prefab.id.Contains("Volcano") || prefab.id.Contains("Vent")))
-									geysers.Add(prefab.id);
-						}
-					}
-					if (geysers.Count > 0)
-						templates.Add(new JObject { ["template"] = name, ["geysers"] = geysers });
-				}
-				if (templates.Count == 0)
+				if (!ProcGen.SettingsCache.subworlds.TryGetValue(subworldFile.name, out ProcGen.SubWorld subworld))
 					continue;
-				arr.Add(new JObject
+				foreach (var rule in subworld.subworldTemplateRules ?? new List<ProcGen.World.TemplateSpawnRules>())
+					AddRule(arr, rule);
+				var features = new List<ProcGen.Feature>(subworld.features ?? new List<ProcGen.Feature>());
+				if (subworld.centralFeature != null)
+					features.Add(subworld.centralFeature);
+				foreach (var feature in features)
 				{
-					["ruleId"] = rule.ruleId ?? "",
-					["listRule"] = rule.listRule.ToString(),
-					["someCount"] = rule.someCount,
-					["moreCount"] = rule.moreCount,
-					["rangeMin"] = rule.range.x,
-					["rangeMax"] = rule.range.y,
-					["times"] = rule.times,
-					["templates"] = templates,
-				});
+					if (feature?.type == null)
+						continue;
+					ProcGen.FeatureSettings settings = null;
+					try { settings = ProcGen.SettingsCache.GetCachedFeature(feature.type); } catch { }
+					var placed = new JArray();
+					foreach (var mob in settings?.internalMobs ?? new List<ProcGen.MobReference>())
+						if (mob.type != null && IsFeature(mob.type))
+							placed.Add(mob.type);
+					if (placed.Count == 0)
+						continue;
+					arr.Add(new JObject
+					{
+						["ruleId"] = "feature:" + feature.type,
+						["listRule"] = "GuaranteeOne",
+						["someCount"] = 0,
+						["moreCount"] = 0,
+						["rangeMin"] = 0,
+						["rangeMax"] = 0,
+						["times"] = 1,
+						["templates"] = new JArray(new JObject { ["template"] = feature.type, ["geysers"] = placed }),
+					});
+				}
 			}
 			return arr;
+		}
+
+		private static void AddRule(JArray arr, ProcGen.World.TemplateSpawnRules rule)
+		{
+			var templates = new JArray();
+			foreach (string name in rule.names ?? new List<string>())
+			{
+				var geysers = new JArray();
+				if (name == "geysers/generic")
+					geysers.Add("GeyserGeneric");
+				else
+				{
+					TemplateContainer template = null;
+					try { template = TemplateCache.GetTemplate(name); } catch { }
+					if (template != null)
+					{
+						foreach (var prefab in (template.otherEntities ?? new List<TemplateClasses.Prefab>()).Concat(template.buildings ?? new List<TemplateClasses.Prefab>()))
+							if (prefab.id != null && (prefab.id.StartsWith("GeyserGeneric") || prefab.id.Contains("Geyser") || prefab.id.Contains("Volcano") || prefab.id.Contains("Vent") || IsFeature(prefab.id)))
+								geysers.Add(prefab.id);
+					}
+				}
+				if (geysers.Count > 0)
+					templates.Add(new JObject { ["template"] = name, ["geysers"] = geysers });
+			}
+			if (templates.Count == 0)
+				return;
+			arr.Add(new JObject
+			{
+				["ruleId"] = rule.ruleId ?? "",
+				["listRule"] = rule.listRule.ToString(),
+				["someCount"] = rule.someCount,
+				["moreCount"] = rule.moreCount,
+				["rangeMin"] = rule.range.x,
+				["rangeMax"] = rule.range.y,
+				["times"] = rule.times,
+				["templates"] = templates,
+			});
 		}
 
 		/// <summary>Clusters (the "which asteroid" choice): their worlds, which one you start on, and their space POIs.</summary>

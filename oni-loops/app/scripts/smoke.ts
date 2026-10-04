@@ -1,7 +1,13 @@
 import { dataSet, gameData, label, SPACED_OUT } from '../src/data/load'
 import { buildGraph, fmt, stepLabel } from '../src/model/graph'
 import { answer, setDlcNames, type Colony, type Node } from '../src/model/chains'
-import { computeTiers, guaranteedGeysers, randomGeyserSlots, TIER_LABEL } from '../src/model/tiers'
+import {
+  TIER_LABEL,
+  computeTiers,
+  guaranteedFeatures,
+  guaranteedGeysers,
+  randomGeyserSlots,
+} from '../src/model/tiers'
 
 const graph = buildGraph(gameData)
 setDlcNames(Object.fromEntries(gameData.dlcs.map((d) => [d.id, d.name])))
@@ -23,6 +29,7 @@ const colony: Colony = {
   critters: null,
   cluster: clusterId,
   geysers: new Set(guaranteed.keys()),
+  features: new Map([...guaranteedFeatures(gameData, cluster)].map(([id, f]) => [id, f.min])),
   duplicants: 8,
 }
 const tiers = computeTiers(gameData, graph, colony, cluster, colony.geysers)

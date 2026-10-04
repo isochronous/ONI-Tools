@@ -11,6 +11,8 @@ export interface Colony {
   cluster: string | null
   /** Geyser type ids ("molten_iron") the colony has access to. */
   geysers: Set<string>
+  /** Terrain features found, by prefab id ("OilWell"), with how many: a building on one is one per feature. */
+  features: Map<string, number>
   /** How many Duplicants the colony has: the one thing a chain cannot build more of. */
   duplicants: number
 }
@@ -162,6 +164,7 @@ interface ShapeInput {
  */
 const MINOR_SHARE = 0.25
 function minorOutput(graph: Graph, p: Process, output: string): boolean {
+  if (p.primaryOutput === output) return false
   const mass = p.outputs.filter((f) => graph.elements.has(f.tag))
   if (!graph.elements.has(output) || mass.length < 2) return false
   const total = mass.reduce((sum, f) => sum + f.amount, 0)
@@ -204,6 +207,9 @@ function strainBucket(strain: number): number {
 
 /** What a process with no inputs costs the colony: a geyser it has, its own terrain, a rocket trip, or a critter or plant. */
 function sourceTier(p: Process, colony: Colony, tiers: Tiers): Tier | null {
+  // A building on a terrain feature the colony has not found (an Oil Well with no Oil
+  // Reservoir) is out of reach, like a geyser it has not found.
+  if (p.needs.feature && !((colony.features.get(p.needs.feature) ?? 0) > 0)) return 'none'
   switch (p.kind) {
     case 'geyser':
       return colony.geysers.has(p.viaId) ? 'renewable' : 'none'
@@ -252,7 +258,7 @@ export function findChains(
     let incidental = p.incidental === true || minorOutput(graph, p, output)
     const runs = need / out.amount // process runs per cycle at this scale
     const t = p.throughput
-    let strain = t ? runs / t.runsPerCycle / allowance(t.instance) : 0
+    let strain = t ? runs / t.runsPerCycle / allowance(t.instance, p) : 0
     for (const i of inputs) {
       tier = worse(tier, i.tier)
       if (i.shape) {
@@ -338,9 +344,9 @@ export function findChains(
     return d < 0
   }
 
-  /** What a colony would build of each kind of thing for one product; Duplicants are what it has. */
-  function allowance(instance: NonNullable<Process['throughput']>['instance']): number {
-    return instance === 'duplicant' ? colony.duplicants : ALLOWANCE[instance]
+  /** What a colony would build of each kind of thing for one product; Duplicants and terrain features are what it has. */
+  function allowance(instance: NonNullable<Process['throughput']>['instance'], p: Process): number {
+    return instanceCap(instance, p, colony)
   }
 
   /** Every distinct way to make `tag`, one shape per set of inputs, best first. */
@@ -681,6 +687,17 @@ function retier(n: Node): { tier: Tier; size: number } {
 /** What a colony would reasonably build of each kind of thing for one product. */
 const ALLOWANCE = { building: 10, plant: 50, critter: 30, geyser: 2 } as const
 
+/** The allowance, or for Duplicants and terrain features what the colony has (at least 1, so a lack reads as strain, not infinity). */
+function instanceCap(
+  instance: NonNullable<Process['throughput']>['instance'],
+  p: Process,
+  colony: Colony,
+): number {
+  if (instance === 'duplicant') return colony.duplicants
+  if (instance === 'feature') return Math.max(1, colony.features.get(p.needs.feature ?? '') ?? 0)
+  return ALLOWANCE[instance]
+}
+
 function summarise(chain: Chain, colony: Colony, perCycle: number) {
   const needs = new Map<string, Input>()
   const makes = new Map<string, number>()
@@ -707,7 +724,7 @@ function summarise(chain: Chain, colony: Colony, perCycle: number) {
       }
     } else if (t && n.runs > 0) {
       const count = (n.runs / t.runsPerCycle) * perCycle
-      const strain = count / ALLOWANCE[t.instance as keyof typeof ALLOWANCE]
+      const strain = count / instanceCap(t.instance, n.process, colony)
       if (strain > chain.strain) {
         chain.strain = strain
         chain.strainNode = n

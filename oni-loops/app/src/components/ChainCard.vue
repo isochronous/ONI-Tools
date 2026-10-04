@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { label } from '../data/load'
 import { qty, unitOf } from '../model'
-import { fmt, stepLabel } from '../model/graph'
+import { fmt, stepLabel, type Process } from '../model/graph'
 import { nodesOf, type Chain } from '../model/chains'
 import { TIER_LABEL, type Tiers } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
@@ -30,6 +30,12 @@ const INSTANCE_NOUN: Record<string, string> = {
   duplicant: 'Duplicants',
 }
 
+/** "plants", "of them", or for a building on a terrain feature "Oil Reservoirs". */
+function instanceNoun(p: Process): string {
+  const t = p.throughput!
+  return t.instance === 'feature' ? label(p.needs.feature!) + 's' : INSTANCE_NOUN[t.instance]!
+}
+
 /** Joins names the way a sentence would: "a", "a and b", "a, b, and c". */
 function list(parts: string[]): string {
   if (parts.length <= 1) return parts[0] ?? ''
@@ -37,16 +43,28 @@ function list(parts: string[]): string {
   return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`
 }
 
+/** "a Volcano", "an Oil Reservoir". */
+function article(name: string): string {
+  return (/^[aeiou]/i.test(name) ? 'an ' : 'a ') + name
+}
+
 /** What the chain costs, as a sentence: "fed by a geyser and your terrain", "needs a rocket for Isoresin". */
 const costText = computed(() => {
   const c = props.chain
+  // A geyser or terrain feature the colony has not found is the usual reason a chain is out of reach.
+  const missing = nodesOf(c)
+    .map((n) =>
+      n.process.needs.feature && !((store.features.get(n.process.needs.feature) ?? 0) > 0)
+        ? label(n.process.needs.feature)
+        : n.process.kind === 'geyser' && !store.geysers.has(n.process.viaId)
+          ? [n.process.via, ...(n.alternatives ?? []).map((p) => p.via)].join(' or ')
+          : '',
+    )
+    .filter((name) => name)
+  if (missing.length)
+    return `needs ${list([...new Set(missing)].map(article))}, which your colony has not found.`
   if (c.needs.length === 0) {
     if (c.worstTier === 'renewable') return 'runs on sources that never run out.'
-    // A geyser the colony has not listed is the usual reason a source-only chain is out of reach.
-    const geysers = nodesOf(c)
-      .filter((n) => n.process.kind === 'geyser' && !store.geysers.has(n.process.viaId))
-      .map((n) => [n.process.via, ...(n.alternatives ?? []).map((p) => p.via)].join(' or '))
-    if (geysers.length) return `needs a ${list(geysers)}, which your colony has not found.`
     return c.worstTier === 'local' ? "draws on your asteroid's terrain." : 'see the steps.'
   }
   const worst = c.needs.filter((i) => i.tier === c.worstTier).map((i) => label(i.tag))
@@ -85,9 +103,12 @@ const costText = computed(() => {
       </p>
       <p v-if="chain.strain > 1" class="capped">
         At this rate the {{ stepLabel(chain.strainNode!.process) }} step needs
-        {{ fmt(Math.ceil(chain.strainCount!)) }}
-        {{ INSTANCE_NOUN[chain.strainNode!.process.throughput!.instance] }}, more than a colony
-        would build for this.
+        {{ fmt(Math.ceil(chain.strainCount!)) }} {{ instanceNoun(chain.strainNode!.process) }},
+        {{
+          chain.strainNode!.process.throughput!.instance === 'feature'
+            ? 'more than your colony has found.'
+            : 'more than a colony would build for this.'
+        }}
       </p>
       <p v-if="chain.ceiling !== undefined && chain.ceiling < perCycle - 1e-9" class="capped">
         With {{ store.duplicants }} Duplicants this chain makes at most
