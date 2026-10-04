@@ -78,6 +78,8 @@ export interface BuildingFlow {
   rate?: number
   amountPerUse?: number
   via: string
+  /** The building only takes this input at or above this temperature (the Steam Turbine's 125 C). */
+  minTemperatureK?: number
 }
 
 export interface BuildingData {

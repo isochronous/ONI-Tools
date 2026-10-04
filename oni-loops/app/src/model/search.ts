@@ -57,7 +57,8 @@ export interface Loop {
   /**
    * True when, at every step, the carried resource is at least PRIMARY_SHARE of the mass the
    * process consumes. Otherwise the target only rides along a process that mostly eats
-   * something else (steam into an oil refinery), and the loop is a side-stream.
+   * something else (a little carbon dioxide into an Algae Terrarium that mostly drinks water),
+   * and the loop is a side-stream.
    */
   primary: boolean
   /** Lowest share seen along the chain. */

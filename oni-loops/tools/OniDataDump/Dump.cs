@@ -287,7 +287,8 @@ namespace OniDataDump
 				SteamTurbine turbine = go.GetComponent<SteamTurbine>();
 				if (turbine != null)
 				{
-					inputs.Add(new JObject { ["tag"] = turbine.srcElem.ToString(), ["rate"] = turbine.pumpKGRate, ["via"] = "SteamTurbine" });
+					// The turbine idles below minActiveTemperature (125 C): steam straight off boiling water is too cool.
+					inputs.Add(new JObject { ["tag"] = turbine.srcElem.ToString(), ["rate"] = turbine.pumpKGRate, ["via"] = "SteamTurbine", ["minTemperatureK"] = turbine.minActiveTemperature });
 					outputs.Add(new JObject { ["tag"] = turbine.destElem.ToString(), ["rate"] = turbine.pumpKGRate, ["via"] = "SteamTurbine" });
 				}
 				FlushToilet flush = go.GetComponent<FlushToilet>();

@@ -92,7 +92,7 @@ function has(id: string) {
         Call a loop side-stream when the target is under <strong>{{ Math.round(store.primaryShare * 100) }}%</strong> of what a step consumes
         <input v-model.number="store.primaryShare" type="range" min="0" max="1" step="0.05" />
       </label>
-      <p class="hint">Side-stream loops ride along a machine that mostly eats something else (steam into an oil refinery); they are listed last.</p>
+      <p class="hint">A side-stream loop passes through a step where the loop's own material is only a small part of what that step consumes, so the step's output is really paid for by something else: 0.04 kg of carbon dioxide into an Algae Terrarium that drinks 180 kg of water does not make the water "free". They are listed last.</p>
       <label class="slider">
         Drive topped-up loops to return <strong>×{{ store.topUpRatio }}</strong>
         <input v-model.number="store.topUpRatio" type="range" min="1" max="10" step="0.5" />

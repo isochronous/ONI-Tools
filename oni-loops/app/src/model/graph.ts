@@ -278,6 +278,9 @@ export function buildGraph(d: GameData): Graph {
       .filter((f) => f.amount > 0 && (elementIds.has(f.tag) || d.names[f.tag]))
     if (outputs.length === 0) continue
     const perUse = b.outputs.some((f) => f.amountPerUse !== undefined)
+    // An input the building only accepts hot enough (the Steam Turbine's 125 C steam): steam
+    // straight off boiling water sits at the boiling point and has to be heated further.
+    const hot = b.inputs.filter((f) => f.minTemperatureK !== undefined).map((f) => `${label(f.tag)} at ${celsius(f.minTemperatureK!)} °C or hotter`)
     add({
       kind: 'converter',
       via: b.name,
@@ -285,7 +288,7 @@ export function buildGraph(d: GameData): Graph {
       inputs: inputs.filter((f) => f.amount > 0),
       outputs,
       dlc: b.dlc,
-      needs: { building: b.id },
+      needs: { building: b.id, extras: hot.length ? hot : undefined },
       notes: perUse ? ['per use'] : ['per second while running'],
       seconds: perUse ? undefined : 1,
     })
