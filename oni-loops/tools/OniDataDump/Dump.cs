@@ -38,6 +38,9 @@ namespace OniDataDump
 					["wildCritterCalorieBurnRatio"] = TUNING.CREATURES.WILD_CALORIE_BURN_RATIO,
 					["wildCritterGrowthModifier"] = TUNING.CREATURES.WILD_GROWTH_RATE_MODIFIER,
 					["secondsPerCycle"] = 600f,
+					// A Duplicant's bladder fills at this rate out of 100, so 1/6 per second is one
+					// toilet visit per cycle. Showers are taken about as often.
+					["bladderPerSecond"] = TUNING.DUPLICANTSTATS.STANDARD.BaseStats.BLADDER_INCREASE_PER_SECOND,
 					// The sim only changes phase this many kelvin past lowTemp / highTemp.
 					["stateTransitionBufferK"] = SimMessages.STATE_TRANSITION_TEMPERATURE_BUFER,
 					// A Mimika's pollination: growth bonus, how long it lasts, and the pause between plants.
@@ -54,6 +57,7 @@ namespace OniDataDump
 				["items"] = Items(),
 				["recipes"] = Recipes(),
 				["buildings"] = Buildings(),
+				["fabricators"] = Fabricators(),
 				["critters"] = Critters(),
 				["plants"] = Plants(),
 				["geysers"] = Geysers(),
@@ -358,6 +362,24 @@ namespace OniDataDump
 			return arr;
 		}
 
+		/// <summary>
+		/// Every fabricator, with whether a Duplicant has to stand at it for the whole craft (a
+		/// Rock Crusher) or only loads it (a Kiln runs on its own), which is what its throughput
+		/// costs the colony.
+		/// </summary>
+		private static JArray Fabricators()
+		{
+			var arr = new JArray();
+			foreach (BuildingDef def in Assets.BuildingDefs)
+			{
+				ComplexFabricator fab = def.BuildingComplete?.GetComponent<ComplexFabricator>();
+				if (fab == null)
+					continue;
+				arr.Add(new JObject { ["id"] = def.PrefabID, ["duplicantOperated"] = fab.duplicantOperated });
+			}
+			return arr;
+		}
+
 		/// <summary>Buildings with any continuous conversion: ElementConverter, generator fuel, consumers, emitters, toilets.</summary>
 		private static JArray Buildings()
 		{
@@ -369,12 +391,19 @@ namespace OniDataDump
 					continue;
 				var inputs = new JArray();
 				var outputs = new JArray();
+				// A Shower's converter only runs while a Duplicant is in it, five seconds at a
+				// kilogram a second, so it is a per-use building like a toilet.
+				bool shower = go.GetComponent<Shower>() != null;
 				foreach (ElementConverter c in go.GetComponents<ElementConverter>())
 				{
 					foreach (var ce in c.consumedElements ?? new ElementConverter.ConsumedElement[0])
-						inputs.Add(new JObject { ["tag"] = ce.Tag.ToString(), ["rate"] = ce.MassConsumptionRate, ["via"] = "ElementConverter" });
+						inputs.Add(shower
+							? new JObject { ["tag"] = ce.Tag.ToString(), ["amountPerUse"] = Shower.WATER_PER_USE, ["via"] = "Shower" }
+							: new JObject { ["tag"] = ce.Tag.ToString(), ["rate"] = ce.MassConsumptionRate, ["via"] = "ElementConverter" });
 					foreach (var oe in c.outputElements ?? new ElementConverter.OutputElement[0])
-						outputs.Add(new JObject { ["tag"] = oe.elementHash.ToString(), ["rate"] = oe.massGenerationRate, ["via"] = "ElementConverter" });
+						outputs.Add(shower
+							? new JObject { ["tag"] = oe.elementHash.ToString(), ["amountPerUse"] = Shower.WATER_PER_USE * oe.massGenerationRate, ["via"] = "Shower" }
+							: new JObject { ["tag"] = oe.elementHash.ToString(), ["rate"] = oe.massGenerationRate, ["via"] = "ElementConverter" });
 				}
 				EnergyGenerator gen = go.GetComponent<EnergyGenerator>();
 				if (gen != null && gen.formula.inputs != null)
@@ -458,6 +487,7 @@ namespace OniDataDump
 				{
 					string calorieDelta = Db.Get().Amounts.Calories.deltaAttribute.Id;
 					string calorieMax = Db.Get().Amounts.Calories.maxAttribute.Id;
+					string ageMax = Db.Get().Amounts.Age.maxAttribute.Id;
 					foreach (string traitId in modifiers.initialTraits)
 					{
 						Klei.AI.Trait trait = Db.Get().traits.TryGet(traitId);
@@ -469,6 +499,8 @@ namespace OniDataDump
 								o["caloriesBurnedPerCycle"] = -m.Value * 600f;
 							else if (m.AttributeId == calorieMax)
 								o["stomachCalories"] = m.Value;
+							else if (m.AttributeId == ageMax)
+								o["lifespanCycles"] = m.Value; // it dies of old age after this many cycles
 						}
 					}
 				}
@@ -490,7 +522,17 @@ namespace OniDataDump
 				}
 				ScaleGrowthMonitor.Def scales = prefab.GetDef<ScaleGrowthMonitor.Def>();
 				if (scales != null)
-					o["shear"] = new JObject { ["item"] = scales.itemDroppedOnShear.ToString(), ["atmosphere"] = scales.targetAtmosphere.ToString() };
+				{
+					// Scale growth runs at defaultGrowthRate * 100 per second out of 100, so a tame
+					// critter is shearable every 1/defaultGrowthRate seconds; wild ones grow at a quarter.
+					o["shear"] = new JObject
+					{
+						["item"] = scales.itemDroppedOnShear.ToString(),
+						["atmosphere"] = scales.targetAtmosphere.ToString(),
+						["mass"] = scales.dropMass,
+						["seconds"] = scales.defaultGrowthRate > 0f ? 1f / scales.defaultGrowthRate : 0f,
+					};
+				}
 				arr.Add(o);
 			}
 			return arr;

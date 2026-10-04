@@ -18,6 +18,8 @@ export interface GameInfo {
 }
 
 export interface Tuning {
+  /** How fast a Duplicant's bladder fills, out of 100 (1/6 per second: one toilet visit a cycle). */
+  bladderPerSecond?: number
   wildPlantGrowthModifier: number
   wildCritterCalorieBurnRatio: number
   wildCritterGrowthModifier: number
@@ -113,7 +115,16 @@ export interface CritterData {
   cyclesPerEgg?: number
   adult?: string
   growDrop?: string
-  shear?: { item: string; atmosphere: string }
+  shear?: {
+    item: string
+    atmosphere: string
+    /** Kilograms dropped per shearing. */
+    mass?: number
+    /** Seconds for a tame critter to regrow its scales. */
+    seconds?: number
+  }
+  /** Cycles until it dies of old age. */
+  lifespanCycles?: number
 }
 
 export interface PlantData {
@@ -208,6 +219,8 @@ export interface GameData {
   items: ItemData[]
   recipes: RecipeData[]
   buildings: BuildingData[]
+  /** Every fabricator, with whether a Duplicant works it for the whole craft. */
+  fabricators?: { id: string; duplicantOperated: boolean }[]
   critters: CritterData[]
   plants: PlantData[]
   geysers: GeyserData[]

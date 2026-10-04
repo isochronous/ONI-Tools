@@ -104,8 +104,25 @@ function unit(p: Process): string {
   return ''
 }
 
+const INSTANCE_NOUN = {
+  building: 'building',
+  critter: 'critter',
+  plant: 'plant',
+  duplicant: 'Duplicant',
+}
+
+/** "about 3,000 kg per cycle per building", from the process's rate per instance. */
+function rateNote(p: Process): string[] {
+  const t = p.throughput
+  if (!t) return []
+  const perCycle = amountOf(p, props.target) * t.runsPerCycle
+  const who = t.instance === 'duplicant' ? 'Duplicant' : INSTANCE_NOUN[t.instance]
+  const busy = t.operated ? ', with a Duplicant working it' : ''
+  return [`about ${qty(perCycle, props.target)} per cycle per ${who}${busy}`]
+}
+
 function notes(p: Process): string[] {
-  return [...p.notes, ...(p.needs.extras ?? [])]
+  return [...p.notes, ...(p.needs.extras ?? []), ...rateNote(p)]
 }
 </script>
 

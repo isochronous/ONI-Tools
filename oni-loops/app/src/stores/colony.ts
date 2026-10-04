@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { chooseDataSet, dataSet, gameData, SPACED_OUT } from '../data/load'
-import { DEFAULT_PRIMARY_SHARE, type Colony } from '../model/search'
+import { DEFAULT_DUPLICANTS, DEFAULT_PRIMARY_SHARE, type Colony } from '../model/search'
 import { guaranteedGeysers } from '../model/tiers'
 
 const STORAGE_KEY = 'oni-loops.colony'
@@ -16,7 +16,11 @@ interface Saved {
   /** Geyser types found on the map beyond the guaranteed ones. */
   extraGeysers: string[]
   primaryShare: number
+  duplicants: number
   loopFloor: number
+  /** How much of a target the player wants per cycle, for elements (kg) and for items (count). */
+  demandKg: number
+  demandItems: number
   /** Filter keys ("machine:Kiln") the player has switched off. */
   hidden: string[]
 }
@@ -57,6 +61,9 @@ export const useColonyStore = defineStore('colony', () => {
       : DEFAULT_PRIMARY_SHARE,
   )
   const extraGeysers = ref(new Set(saved?.extraGeysers ?? []))
+  const duplicants = ref(saved?.duplicants ?? DEFAULT_DUPLICANTS)
+  const demandKg = ref(saved?.demandKg ?? 100)
+  const demandItems = ref(saved?.demandItems ?? 10)
   /** Smallest return a loop may have and still be listed. */
   const loopFloor = ref(saved?.loopFloor ?? 0.5)
   const hidden = ref(new Set(saved?.hidden ?? []))
@@ -72,6 +79,7 @@ export const useColonyStore = defineStore('colony', () => {
     cluster: cluster.value,
     geysers: geysers.value,
     primaryShare: primaryShare.value,
+    duplicants: duplicants.value,
   }))
 
   function save() {
@@ -83,7 +91,10 @@ export const useColonyStore = defineStore('colony', () => {
         cluster: cluster.value,
         extraGeysers: [...extraGeysers.value],
         primaryShare: primaryShare.value,
+        duplicants: duplicants.value,
         loopFloor: loopFloor.value,
+        demandKg: demandKg.value,
+        demandItems: demandItems.value,
         hidden: [...hidden.value],
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -136,12 +147,15 @@ export const useColonyStore = defineStore('colony', () => {
     hidden.value = new Set()
   }
 
-  watch([colony, loopFloor, hidden], save, { deep: true })
+  watch([colony, loopFloor, hidden, demandKg, demandItems], save, { deep: true })
 
   return {
     dlcs,
     critters,
     primaryShare,
+    duplicants,
+    demandKg,
+    demandItems,
     cluster,
     clusterData,
     guaranteed,

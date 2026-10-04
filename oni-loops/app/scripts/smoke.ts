@@ -24,6 +24,7 @@ const colony: Colony = {
   cluster: clusterId,
   geysers: new Set(guaranteed.keys()),
   primaryShare: 0.5,
+  duplicants: 8,
 }
 const tiers = computeTiers(gameData, graph, colony, cluster, colony.geysers)
 for (const tag of [
@@ -46,7 +47,7 @@ for (const tag of [
   )
 
 for (const target of ['Diamond', 'BasicFabric', 'TempConductorSolid', 'Water']) {
-  const a = answer(graph, target, colony, tiers)
+  const a = answer(graph, target, colony, tiers, graph.elements.has(target) ? 100 : 10)
   console.log(
     `\n== ${label(target)}: ${a.loops.length} loops, ${a.producers.length} producers, ${a.locked.length} locked`,
   )
@@ -60,6 +61,10 @@ for (const target of ['Diamond', 'BasicFabric', 'TempConductorSolid', 'Water']) 
           )
           .join(' ; '),
     )
+    if (loop.ceiling !== undefined)
+      console.log(
+        `      ceiling ${fmt(loop.ceiling)}/cycle with 8 dupes at step ${(loop.ceilingStep ?? 0) + 1}${loop.capped ? ' (capped)' : ''}`,
+      )
     if (loop.externals.length)
       console.log(
         '      needs: ' +

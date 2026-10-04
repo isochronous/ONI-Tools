@@ -17,9 +17,12 @@ export interface Colony {
    * is a side-stream: the target rides along a process that mostly eats something else.
    */
   primaryShare: number
+  /** How many Duplicants the colony has: the one instance a loop cannot build more of. */
+  duplicants: number
 }
 
 export const DEFAULT_PRIMARY_SHARE = 0.5
+export const DEFAULT_DUPLICANTS = 8
 
 export interface Step {
   process: Process
@@ -69,6 +72,16 @@ export interface Loop {
   /** The hardest-to-get external input's tier; 'renewable' when there are none. */
   worstTier: Tier
   /**
+   * The most target per cycle the loop can make with the colony's Duplicants, set by the
+   * step that needs them (a toilet visit happens once a cycle per Duplicant); absent when no
+   * step is bound to them.
+   */
+  ceiling?: number
+  /** Index of the step that sets `ceiling`. */
+  ceilingStep?: number
+  /** True when `ceiling` is below what the player asked for per cycle. */
+  capped?: boolean
+  /**
    * Where the loop can be topped up, when it can. For a loop short of 1, `externals`,
    * `byproducts`, and `worstTier` then describe the loop driven back to exactly 1 (its default
    * run); `runAt` gives any other return.
@@ -81,6 +94,8 @@ export interface Loop {
 export interface StepFlows {
   extraInputs: Flow[]
   extraOutputs: Flow[]
+  /** Instances of what does the step (buildings, critters, plants, Duplicants) per unit of target per cycle. */
+  instancesPerUnit?: number
 }
 
 export interface Run {
@@ -95,6 +110,8 @@ export interface Run {
   /** Net over the whole chain: what no step of it consumes. */
   byproducts: Flow[]
   worstTier: Tier
+  ceiling?: number
+  ceilingStep?: number
 }
 
 /** What the loop returns per unit of target in its default run. */
@@ -197,6 +214,7 @@ export function findLoops(
   target: string,
   colony: Colony,
   tiers: Tiers,
+  perCycle: number,
   maxSteps = 6,
   maxLoops = 50,
 ): Loop[] {
@@ -267,6 +285,7 @@ export function findLoops(
 
   for (depth = 2; depth <= maxSteps && loops.length < maxLoops; depth++)
     walk(target, [], 1, new Set([target]))
+  for (const l of loops) l.capped = l.ceiling !== undefined && l.ceiling < perCycle - 1e-9
   return loops.sort(compareLoops)
 }
 
@@ -280,6 +299,7 @@ export function compareLoops(a: Loop, b: Loop): number {
   return (
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
     Number(b.primary) - Number(a.primary) ||
+    Number(a.capped ?? false) - Number(b.capped ?? false) ||
     Number(isClosed(b)) - Number(isClosed(a)) ||
     Number(isPositive(b)) - Number(isPositive(a)) ||
     effectiveRatio(b) - effectiveRatio(a) ||
@@ -339,6 +359,8 @@ function withTopUp(graph: Graph, loop: Loop, target: string, colony: Colony, tie
     externals: run.externals,
     byproducts: run.byproducts,
     worstTier: run.worstTier,
+    ceiling: run.ceiling,
+    ceilingStep: run.ceilingStep,
     topUp: { ...point, amount: run.topUpAmount },
   }
 }
@@ -366,6 +388,8 @@ export function runAt(
       externals: plain.externals,
       byproducts: plain.byproducts,
       worstTier: plain.worstTier,
+      ceiling: plain.ceiling,
+      ceilingStep: plain.ceilingStep,
     }
   }
   const scale = want / loop.ratio
@@ -382,6 +406,8 @@ export function runAt(
     externals: boosted.externals,
     byproducts: boosted.byproducts,
     worstTier: boosted.worstTier,
+    ceiling: boosted.ceiling,
+    ceilingStep: boosted.ceilingStep,
   }
 }
 
@@ -399,11 +425,13 @@ function summarise(
   colony: Colony,
   tiers: Tiers,
   boost?: { from: number; scale: number },
-): Loop & { stepFlows: StepFlows[] } {
+): Loop & { stepFlows: StepFlows[]; ceiling?: number; ceilingStep?: number } {
   const net = new Map<string, number>()
   const stepFlows: StepFlows[] = []
   let carried = 1 // units of the current step's `from` per unit of target
   let minShare = 1
+  let ceiling: number | undefined
+  let ceilingStep: number | undefined
   for (const [i, s] of steps.entries()) {
     if (boost && i === boost.from) carried *= boost.scale
     const input = inputFor(s.process, s.from)
@@ -424,6 +452,19 @@ function summarise(
     for (const f of s.process.outputs) {
       net.set(f.tag, (net.get(f.tag) ?? 0) + f.amount * runs)
       if (f.tag !== s.to) flows.extraOutputs.push({ tag: f.tag, amount: f.amount * runs })
+    }
+    // How many of what does the step one unit of target per cycle keeps busy, and, where
+    // that is Duplicants, how much target per cycle the colony's Duplicants allow.
+    const t = s.process.throughput
+    if (t && runs > 0) {
+      flows.instancesPerUnit = runs / t.runsPerCycle
+      if (t.instance === 'duplicant') {
+        const most = (colony.duplicants * t.runsPerCycle) / runs
+        if (ceiling === undefined || most < ceiling) {
+          ceiling = most
+          ceilingStep = i
+        }
+      }
     }
     stepFlows.push(flows)
     // Mass share of the carried input, when every input is an element (so kg compares to kg).
@@ -456,6 +497,8 @@ function summarise(
     primary: minShare >= colony.primaryShare,
     minShare,
     worstTier,
+    ceiling,
+    ceilingStep,
   }
 }
 
@@ -478,7 +521,14 @@ const KIND_ORDER: Record<string, number> = {
   starmap: 14,
 }
 
-export function answer(graph: Graph, target: string, colony: Colony, tiers: Tiers): Answer {
+/** `perCycle`: how much of the target the player wants per cycle, which decides which loops are capped by Duplicants. */
+export function answer(
+  graph: Graph,
+  target: string,
+  colony: Colony,
+  tiers: Tiers,
+  perCycle: number,
+): Answer {
   const producers: Process[] = []
   const locked: { process: Process; reason: string }[] = []
   for (const p of graph.byOutput.get(target) ?? []) {
@@ -489,5 +539,10 @@ export function answer(graph: Graph, target: string, colony: Colony, tiers: Tier
   producers.sort(
     (a, b) => (KIND_ORDER[a.kind] ?? 99) - (KIND_ORDER[b.kind] ?? 99) || a.via.localeCompare(b.via),
   )
-  return { target, loops: findLoops(graph, target, colony, tiers, 6, 200), producers, locked }
+  return {
+    target,
+    loops: findLoops(graph, target, colony, tiers, perCycle, 6, 200),
+    producers,
+    locked,
+  }
 }

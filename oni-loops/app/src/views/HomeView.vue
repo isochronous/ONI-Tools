@@ -9,6 +9,7 @@ import TargetPicker from '../components/TargetPicker.vue'
 import { gameData, label } from '../data/load'
 import { useGraph } from '../model'
 import { facetsOf, loopKeys, passes, processKeys } from '../model/filters'
+import { fmt } from '../model/graph'
 import { answer, effectiveRatio, type Loop } from '../model/search'
 import { computeTiers, TIER_LABEL } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
@@ -34,12 +35,23 @@ watch(
   { immediate: true },
 )
 
-// What the colony has decides the answer; everything below only hides parts of it.
+/** Elements are wanted in kilograms per cycle, items in pieces; each remembers its own figure. */
+const targetIsElement = computed(() => !!target.value && graph.elements.has(target.value))
+const perCycle = computed({
+  get: () => (targetIsElement.value ? store.demandKg : store.demandItems),
+  set: (v: number) => {
+    const n = Math.max(0.1, Number(v) || 0.1)
+    if (targetIsElement.value) store.demandKg = n
+    else store.demandItems = n
+  },
+})
+
+// What the colony has, and how much it wants, decide the answer; everything below only hides parts of it.
 const tiers = computed(() =>
   computeTiers(gameData, graph, store.colony, store.clusterData, store.geysers),
 )
 const result = computed(() =>
-  target.value ? answer(graph, target.value, store.colony, tiers.value) : null,
+  target.value ? answer(graph, target.value, store.colony, tiers.value, perCycle.value) : null,
 )
 const facets = computed(() => (result.value ? facetsOf(graph, result.value) : []))
 
@@ -134,13 +146,20 @@ function plural(n: number, word: string): string {
         <section class="block">
           <div class="block-head">
             <h2>Loops back to {{ label(result.target) }}</h2>
-            <label class="floor">
-              <span
-                >Show loops that return at least
-                <strong class="num">{{ Math.round(store.loopFloor * 100) }}%</strong></span
-              >
-              <input v-model.number="store.loopFloor" type="range" min="0" max="1" step="0.05" />
-            </label>
+            <div class="controls">
+              <label class="demand">
+                <span>Run each loop at</span>
+                <input v-model.number="perCycle" type="number" min="0.1" step="any" class="num" />
+                <span>{{ targetIsElement ? 'kg' : '' }} per cycle</span>
+              </label>
+              <label class="floor">
+                <span
+                  >Show loops that return at least
+                  <strong class="num">{{ Math.round(store.loopFloor * 100) }}%</strong></span
+                >
+                <input v-model.number="store.loopFloor" type="range" min="0" max="1" step="0.05" />
+              </label>
+            </div>
           </div>
           <p class="meta">
             <template v-if="result.loops.length === 0"
@@ -157,7 +176,9 @@ function plural(n: number, word: string): string {
               >
               <template v-else-if="shownLoops.length">
                 A loop short of ×1 is driven back to ×1 by adding more of an intermediate you can
-                get anyway; the card says how much.</template
+                get anyway; the card says how much. Counts on each step are for
+                {{ fmt(perCycle) }}{{ targetIsElement ? ' kg' : '' }} of
+                {{ label(result.target) }} entering the loop per cycle, at full uptime.</template
               >
             </template>
           </p>
@@ -168,6 +189,7 @@ function plural(n: number, word: string): string {
               :loop="loop"
               :target="result.target"
               :tiers="tiers"
+              :per-cycle="perCycle"
             />
           </div>
           <p v-if="morePrimary" class="more">
@@ -194,6 +216,7 @@ function plural(n: number, word: string): string {
                 :loop="loop"
                 :target="result.target"
                 :tiers="tiers"
+                :per-cycle="perCycle"
               />
             </div>
           </template>
@@ -297,6 +320,27 @@ function plural(n: number, word: string): string {
 .block h2 {
   margin: 0;
   font-size: 1.375rem;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem 1.5rem;
+}
+.demand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.demand input {
+  width: 5.5rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
 }
 .floor {
   display: grid;

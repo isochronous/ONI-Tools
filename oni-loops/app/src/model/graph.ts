@@ -47,6 +47,20 @@ export interface Needs {
   extras?: string[]
 }
 
+/**
+ * How fast one instance of what does a process can run it, so a chain can say how many
+ * sieves, hatches, plants, or Duplicants a rate needs. Buildings, critters, and plants can
+ * be multiplied; Duplicants are what the colony has.
+ */
+export interface Throughput {
+  /** Runs of the process one instance completes per cycle at full uptime. */
+  runsPerCycle: number
+  /** What one instance is. */
+  instance: 'building' | 'critter' | 'plant' | 'duplicant'
+  /** A Duplicant stands at the building for the whole run (a Rock Crusher), so its time is spent too. */
+  operated?: boolean
+}
+
 export interface Process {
   id: string
   kind: ProcessKind
@@ -63,6 +77,8 @@ export interface Process {
   notes: string[]
   /** True when a building sends its product down a pipe rather than dropping it in the world. */
   pipedOutput?: boolean
+  /** Rate per instance, when the mechanism has one (phase changes and off-gassing have none). */
+  throughput?: Throughput
   /** Time one run takes, in seconds, when known. */
   seconds?: number
 }
@@ -265,6 +281,8 @@ export function buildGraph(d: GameData): Graph {
   // transfers its mass into the product (the Dehydrator's food becomes the dried food),
   // so it is an input like any other.
   const buildingDlc = new Map(d.buildings.map((b) => [b.id, b.dlc]))
+  const operated = new Map((d.fabricators ?? []).map((f) => [f.id, f.duplicantOperated]))
+  const cycle = d.tuning.secondsPerCycle
   for (const r of d.recipes) {
     const combos = cartesian(r.ingredients.map((i) => i.options))
     for (const fab of r.fabricators) {
@@ -282,6 +300,14 @@ export function buildGraph(d: GameData): Graph {
           needs: { building: fab, extras: extras.length ? extras : undefined },
           notes: [],
           seconds: r.time,
+          throughput:
+            r.time > 0
+              ? {
+                  runsPerCycle: cycle / r.time,
+                  instance: 'building',
+                  operated: operated.get(fab) ?? true,
+                }
+              : undefined,
         })
       }
     }
@@ -297,6 +323,13 @@ export function buildGraph(d: GameData): Graph {
       .filter((f) => f.amount > 0 && (elementIds.has(f.tag) || d.names[f.tag]))
     if (outputs.length === 0) continue
     const perUse = b.outputs.some((f) => f.amountPerUse !== undefined)
+    // A per-use building (toilet, shower) is used once a cycle by each Duplicant, as fast as
+    // a bladder fills its 100 points; a continuous one runs its per-second amounts 600 times
+    // a cycle.
+    const usesPerCycle = ((d.tuning.bladderPerSecond ?? 100 / cycle) * cycle) / 100
+    const throughput: Throughput = perUse
+      ? { runsPerCycle: usesPerCycle, instance: 'duplicant' }
+      : { runsPerCycle: cycle, instance: 'building' }
     // An input the building only accepts hot enough (the Steam Turbine's 125 C steam): steam
     // straight off boiling water sits at the boiling point and has to be heated further.
     const hot = b.inputs
@@ -311,6 +344,7 @@ export function buildGraph(d: GameData): Graph {
       dlc: b.dlc,
       needs: { building: b.id, extras: hot.length ? hot : undefined },
       pipedOutput: b.outputConduit !== undefined,
+      throughput,
       notes: perUse ? ['per use'] : ['per second while running'],
       seconds: perUse ? undefined : 1,
     })
@@ -351,6 +385,9 @@ export function buildGraph(d: GameData): Graph {
           outputs: [{ tag: g.produces, amount: g.rate }],
           dlc: c.dlc,
           needs: { critter: c.id },
+          throughput: c.caloriesBurnedPerCycle
+            ? { runsPerCycle: c.caloriesBurnedPerCycle / g.caloriesPerKg, instance: 'critter' }
+            : undefined,
           wildFactor: d.tuning.wildCritterCalorieBurnRatio,
           notes: c.caloriesBurnedPerCycle
             ? [
@@ -369,7 +406,12 @@ export function buildGraph(d: GameData): Graph {
         outputs: [{ tag: drop.tag, amount: drop.count }],
         dlc: c.dlc,
         needs: { critter: c.id },
-        notes: ['on death'],
+        throughput: c.lifespanCycles
+          ? { runsPerCycle: 1 / c.lifespanCycles, instance: 'critter' }
+          : undefined,
+        notes: c.lifespanCycles
+          ? [`on death, after ${fmt(c.lifespanCycles)} cycles of old age`]
+          : ['on death'],
       })
     }
     if (c.egg && c.cyclesPerEgg) {
@@ -381,11 +423,14 @@ export function buildGraph(d: GameData): Graph {
         outputs: [{ tag: c.egg, amount: 1 }],
         dlc: c.dlc,
         needs: { critter: c.id },
+        throughput: { runsPerCycle: 1 / c.cyclesPerEgg, instance: 'critter' },
         notes: [`one every ${fmt(c.cyclesPerEgg)} cycles when tame and fed`],
         wildFactor: d.tuning.wildCritterGrowthModifier,
       })
     }
     if (c.growDrop) {
+      // One per baby that grows up, so one per egg the parent lays.
+      const parent = c.adult ? d.critters.find((a) => a.id === c.adult) : undefined
       add({
         kind: 'grow',
         via: c.name,
@@ -394,19 +439,28 @@ export function buildGraph(d: GameData): Graph {
         outputs: [{ tag: c.growDrop, amount: 1 }],
         dlc: c.dlc,
         needs: { critter: c.id },
+        throughput: parent?.cyclesPerEgg
+          ? { runsPerCycle: 1 / parent.cyclesPerEgg, instance: 'critter' }
+          : undefined,
         notes: ['when it grows up'],
       })
     }
-    if (c.shear) {
+    if (c.shear && !c.adult) {
+      const mass = c.shear.mass ?? 1
       add({
         kind: 'shear',
         via: c.name,
         viaId: c.id,
         inputs: [],
-        outputs: [{ tag: c.shear.item, amount: 1 }],
+        outputs: [{ tag: c.shear.item, amount: mass }],
         dlc: c.dlc,
         needs: { critter: c.id, extras: ['in ' + label(c.shear.atmosphere)] },
-        notes: ['grows scales to shear'],
+        throughput: c.shear.seconds
+          ? { runsPerCycle: cycle / c.shear.seconds, instance: 'critter' }
+          : undefined,
+        notes: c.shear.seconds
+          ? [`${fmt(mass)} kg every ${fmt(c.shear.seconds / cycle)} cycles when tame`]
+          : ['grows scales to shear'],
       })
     }
   }
@@ -437,6 +491,7 @@ export function buildGraph(d: GameData): Graph {
         outputs: [{ tag: p.crop.item, amount: p.crop.count }],
         dlc: p.dlc,
         needs: { plant: p.id, extras: extras.length ? extras : undefined },
+        throughput: { runsPerCycle: 1 / cycles, instance: 'plant' },
         notes: [`every ${fmt(cycles)} cycles when tended`, ...boost],
         seconds: p.crop.durationSeconds,
       })
@@ -451,6 +506,7 @@ export function buildGraph(d: GameData): Graph {
         dlc: p.dlc,
         needs: { plant: p.id, extras: extras.length ? extras : undefined },
         wildFactor: wild,
+        throughput: { runsPerCycle: wild / cycles, instance: 'plant' },
         notes: [`every ${fmt(cycles / wild)} cycles when wild-planted; needs nothing`, ...boost],
         seconds: p.crop.durationSeconds / wild,
       })

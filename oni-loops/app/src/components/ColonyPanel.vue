@@ -98,6 +98,24 @@ function has(id: string) {
     </div>
 
     <div class="group">
+      <p class="eyebrow">Duplicants</p>
+      <label class="count">
+        <input
+          v-model.number="store.duplicants"
+          type="number"
+          min="1"
+          max="200"
+          step="1"
+          class="num"
+        />
+        <span class="hint"
+          >Each visits a toilet about once a cycle, so loops through toilets and showers can only
+          run so fast.</span
+        >
+      </label>
+    </div>
+
+    <div class="group">
       <p class="eyebrow row">
         Critters
         <button type="button" class="link" @click="showCritters = !showCritters">
@@ -205,6 +223,22 @@ select {
 .slider input {
   display: block;
   margin-top: 0.3rem;
+}
+.count {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+.count input {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.count .hint {
+  margin: 0;
 }
 .fine summary {
   cursor: pointer;

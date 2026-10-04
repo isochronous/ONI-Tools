@@ -8,7 +8,7 @@ import { TIER_LABEL, type Tiers } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
 import TagIcon from './TagIcon.vue'
 
-const props = defineProps<{ loop: Loop; target: string; tiers: Tiers }>()
+const props = defineProps<{ loop: Loop; target: string; tiers: Tiers; perCycle: number }>()
 const graph = useGraph()
 const store = useColonyStore()
 
@@ -66,6 +66,31 @@ function own(i: number): number {
   return t && t.step === i ? into(i) - run.value.topUpAmount : into(i)
 }
 
+/**
+ * How many of what does step `i` the wanted rate keeps busy, as a parenthetical: "one running
+ * 3% of the time", "4 of them", "2 Duplicants once a cycle each".
+ */
+function countText(i: number): string {
+  const t = props.loop.steps[i]!.process.throughput
+  const per = run.value.steps[i]!.instancesPerUnit
+  if (!t || per === undefined) return ''
+  const n = per * props.perCycle
+  const whole = Math.ceil(n - 1e-9)
+  switch (t.instance) {
+    case 'duplicant':
+      return whole === 1 ? '1 Duplicant, once a cycle' : `${whole} Duplicants, once a cycle each`
+    case 'building': {
+      const worked = t.operated ? ' with a Duplicant at it' : ''
+      if (n <= 1) return `one running ${fmt(Math.max(n * 100, 0.1))}% of the time${worked}`
+      return `${whole} of them${t.operated ? ', each with a Duplicant at it' : ''}`
+    }
+    case 'critter':
+      return whole === 1 ? '1 critter' : `${whole} critters`
+    case 'plant':
+      return whole === 1 ? '1 plant' : `${whole} plants`
+  }
+}
+
 /** "0.045 kg Sand", or "0.5 kg of any seed" for an input that takes several things. */
 function flowText(f: Flow): string {
   if (!f.anyOf) return qty(f.amount, f.tag)
@@ -101,11 +126,17 @@ function needs(extras: string[] | undefined): string {
         <span class="return-text">
           <template v-if="run.topUpAmount > 0">
             back for every {{ unit }} {{ label(target) }} in, with
-            <strong>{{ qty(run.topUpAmount, loop.topUp!.tag) }}</strong> added along the way. Alone
-            it returns ×{{ fmt(loop.ratio) }}.
+            <strong>{{ qty(run.topUpAmount, loop.topUp!.tag) }}</strong> added along the way ({{
+              qty(run.topUpAmount * perCycle, loop.topUp!.tag)
+            }}
+            per cycle at {{ fmt(perCycle) }}{{ unitOf(target) }}). Alone it returns ×{{
+              fmt(loop.ratio)
+            }}.
           </template>
           <template v-else-if="isPositive(loop)"
-            >back for every {{ unit }} {{ label(target) }} in, with nothing added.</template
+            >back for every {{ unit }} {{ label(target) }} in, with nothing added: run at
+            {{ fmt(perCycle) }}{{ unitOf(target) }} per cycle it nets
+            <strong>{{ qty((run.ratio - 1) * perCycle, target) }}</strong> extra.</template
           >
           <template v-else
             >back for every {{ unit }} {{ label(target) }} in. Nothing in this chain can be topped
@@ -138,6 +169,11 @@ function needs(extras: string[] | undefined): string {
         :title="`At one step ${label(target)} is only ${fmt(loop.minShare * 100)}% of what the machine eats; the rest is the real cost.`"
         >side-stream</span
       >
+      <p v-if="run.ceiling !== undefined && run.ceiling < perCycle - 1e-9" class="capped">
+        With {{ store.duplicants }} Duplicants this loop can only be run at
+        <strong class="num">{{ qty(run.ceiling, target) }}</strong> per cycle: the
+        {{ stepLabel(loop.steps[run.ceilingStep!]!.process) }} step waits on them.
+      </p>
     </header>
 
     <ol class="chain">
@@ -157,6 +193,7 @@ function needs(extras: string[] | undefined): string {
               v-if="s.process.needs.building || s.process.needs.critter || s.process.needs.plant"
               :tag="s.process.needs.building ?? s.process.needs.critter ?? s.process.needs.plant!"
             />{{ stepLabel(s.process) }}</span
+          ><span v-if="countText(i)" class="count"> ({{ countText(i) }})</span
           ><template v-if="run.steps[i]!.extraInputs.length">
             with
             <template v-for="(f, k) in run.steps[i]!.extraInputs" :key="f.tag"
@@ -233,8 +270,9 @@ function needs(extras: string[] | undefined): string {
 }
 .return {
   flex: 1 1 24rem;
-  display: flex;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
   gap: 0.75rem;
   max-width: var(--measure);
 }
@@ -297,6 +335,18 @@ function needs(extras: string[] | undefined): string {
   position: relative;
 }
 
+.capped {
+  flex-basis: 100%;
+  font-size: 0.9375rem;
+  color: var(--warn);
+  max-width: var(--measure);
+}
+.capped strong {
+  font-weight: 600;
+}
+.count {
+  color: var(--faint);
+}
 .side {
   align-self: center;
   font-size: 0.8125rem;
