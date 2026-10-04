@@ -24,6 +24,8 @@ export interface Tuning {
   secondsPerCycle: number
   /** Kelvin past lowTemp/highTemp before the sim actually changes phase. */
   stateTransitionBufferK: number
+  /** A Mimika's pollination: growth bonus (0.25 = +25%), how long one lasts, and the pause between plants. Absent in older dumps. */
+  pollination?: { growthBonus: number; effectSeconds: number; searchCooldownSeconds: number }
 }
 
 export interface ElementData {
@@ -117,6 +119,10 @@ export interface PlantData {
   fertilizer?: { tag: string; rate: number }[]
   seed?: { item: string; productionType: string; count: number }
   skilledHarvestBonus?: Amount
+  /** A vine mother: the crop count is for all of this many vines on one plant. */
+  branches?: number
+  /** Wilts unless a Mimika, Sweetle, or Grubgrub tends it. */
+  needsPollination?: boolean
 }
 
 export interface GeyserData {

@@ -40,6 +40,13 @@ namespace OniDataDump
 					["secondsPerCycle"] = 600f,
 					// The sim only changes phase this many kelvin past lowTemp / highTemp.
 					["stateTransitionBufferK"] = SimMessages.STATE_TRANSITION_TEMPERATURE_BUFER,
+					// A Mimika's pollination: growth bonus, how long it lasts, and the pause between plants.
+					["pollination"] = new JObject
+					{
+						["growthBonus"] = ButterflyTuning.CROP_TENDED_MULTIPLIER_EFFECT,
+						["effectSeconds"] = ButterflyTuning.CROP_TENDED_MULTIPLIER_DURATION,
+						["searchCooldownSeconds"] = ButterflyTuning.SEARCH_COOLDOWN,
+					},
 				},
 				["dlcs"] = new JArray(DlcIds().Select(id => new JObject { ["id"] = id, ["name"] = DlcName(id) })),
 				["names"] = Names(),
@@ -398,6 +405,39 @@ namespace OniDataDump
 				SeedProducer seeds = prefab.GetComponent<SeedProducer>();
 				if (seeds != null)
 					o["seed"] = new JObject { ["item"] = seeds.seedInfo.seedId, ["productionType"] = seeds.seedInfo.productionType.ToString(), ["count"] = seeds.seedInfo.newSeedsProduced };
+				if (prefab.GetDef<PollinationMonitor.Def>() != null)
+					o["needsPollination"] = true;
+				arr.Add(o);
+			}
+			// Vine mothers (the Ovagro Node) have no Growing or Crop of their own: they sprout up to
+			// MAX_BRANCH_COUNT vines, and each vine bears the crop. Reported as one plant whose
+			// harvest is every vine's, with the node's irrigation.
+			foreach (KPrefabID id in Assets.Prefabs)
+			{
+				VineMother.Def def = id.gameObject.GetDef<VineMother.Def>();
+				if (def == null)
+					continue;
+				GameObject branch = Assets.GetPrefab(def.BRANCH_PREFAB_NAME);
+				Crop crop = branch != null ? branch.GetComponent<Crop>() : null;
+				if (crop == null)
+					continue;
+				var o = new JObject
+				{
+					["id"] = id.PrefabTag.ToString(),
+					["name"] = Plain(id.gameObject.GetProperName()),
+					["dlc"] = Restrictions(id),
+					["branches"] = def.MAX_BRANCH_COUNT,
+					["crop"] = new JObject { ["item"] = crop.cropVal.cropId, ["durationSeconds"] = crop.cropVal.cropDuration, ["count"] = crop.cropVal.numProduced * def.MAX_BRANCH_COUNT },
+				};
+				IrrigationMonitor.Def irrigation = id.gameObject.GetDef<IrrigationMonitor.Def>();
+				if (irrigation?.consumedElements != null)
+					o["irrigation"] = new JArray(irrigation.consumedElements.Select(c => new JObject { ["tag"] = c.tag.ToString(), ["rate"] = c.massConsumptionRate }));
+				PlantFiberProducer fiber = branch.GetComponent<PlantFiberProducer>();
+				if (fiber != null)
+					o["skilledHarvestBonus"] = new JObject { ["tag"] = "PlantFiber", ["amount"] = fiber.amount * def.MAX_BRANCH_COUNT };
+				SeedProducer seeds = branch.GetComponent<SeedProducer>();
+				if (seeds != null)
+					o["seed"] = new JObject { ["item"] = seeds.seedInfo.seedId, ["productionType"] = seeds.seedInfo.productionType.ToString(), ["count"] = seeds.seedInfo.newSeedsProduced * seeds.seedDropChanceMultiplier * def.MAX_BRANCH_COUNT };
 				arr.Add(o);
 			}
 			return arr;

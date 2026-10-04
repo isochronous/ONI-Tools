@@ -343,6 +343,12 @@ export function buildGraph(d: GameData): Graph {
       const cycles = p.crop.durationSeconds / d.tuning.secondsPerCycle
       const inputs: Flow[] = []
       for (const f of [...(p.irrigation ?? []), ...(p.fertilizer ?? [])]) inputs.push({ tag: f.tag, amount: f.rate * p.crop.durationSeconds })
+      const extras: string[] = []
+      if (p.branches) extras.push(`across up to ${p.branches} vines on one plant`)
+      if (p.needsPollination) extras.push('needs pollination (Mimika, Sweetle, or Grubgrub)')
+      // A Mimika's visit speeds growth for a while; one keeps a handful of plants going.
+      const pollination = d.tuning.pollination
+      const boost = pollination && p.crop.item !== 'Butterfly' ? [`+${fmt(pollination.growthBonus * 100)}% growth while a Mimika pollinates it (one Mimika keeps up to ${Math.floor(pollination.effectSeconds / pollination.searchCooldownSeconds)} plants going)`] : []
       add({
         kind: 'crop',
         via: p.name,
@@ -350,8 +356,8 @@ export function buildGraph(d: GameData): Graph {
         inputs,
         outputs: [{ tag: p.crop.item, amount: p.crop.count }],
         dlc: p.dlc,
-        needs: { plant: p.id },
-        notes: [`every ${fmt(cycles)} cycles when tended`],
+        needs: { plant: p.id, extras: extras.length ? extras : undefined },
+        notes: [`every ${fmt(cycles)} cycles when tended`, ...boost],
         seconds: p.crop.durationSeconds,
       })
       // Wild (pip-planted) plants need no irrigation or fertilizer and grow at a fraction of the rate.
@@ -363,9 +369,9 @@ export function buildGraph(d: GameData): Graph {
         inputs: [],
         outputs: [{ tag: p.crop.item, amount: p.crop.count }],
         dlc: p.dlc,
-        needs: { plant: p.id },
+        needs: { plant: p.id, extras: extras.length ? extras : undefined },
         wildFactor: wild,
-        notes: [`every ${fmt(cycles / wild)} cycles when wild-planted; needs nothing`],
+        notes: [`every ${fmt(cycles / wild)} cycles when wild-planted; needs nothing`, ...boost],
         seconds: p.crop.durationSeconds / wild,
       })
       if (p.skilledHarvestBonus) {
