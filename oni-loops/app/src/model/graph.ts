@@ -25,6 +25,7 @@ export type ProcessKind =
   | 'geyser' // vent/geyser output
   | 'worldgen' // found in an asteroid's terrain
   | 'starmap' // brought back by a base-game rocket from a Starmap destination
+  | 'rot' // food spoils into a rot pile; a rot pile decomposes into polluted dirt
 
 export interface Flow {
   tag: string
@@ -34,6 +35,8 @@ export interface Flow {
    * step then consumes whichever one the chain arrives with; `tag` is the first of them.
    */
   anyOf?: string[]
+  /** What the alternatives have in common, for display ("compostable item"); kinds otherwise. */
+  anyOfName?: string
 }
 
 export interface Needs {
@@ -105,14 +108,29 @@ export function stepLabel(p: Process): string {
       return p.via + ' dies'
     case 'crop':
       return p.via + ' harvest'
+    case 'rot':
+      return p.viaId === 'RotPile' ? p.via + ' decomposes' : p.via + ' spoils'
     default:
       return p.via
   }
 }
 
+/** Display names for inputs the game names by tag rather than by thing. */
+const CLASS_NAMES: Record<string, string> = {
+  Compostable: 'compostable item',
+  Filter: 'filtration medium',
+  BuildingWood: 'wood',
+  CombustibleLiquid: 'combustible liquid',
+  PlastifiableLiquid: 'plastifiable liquid',
+}
+
+/** RotPile.States: a pile converts to Polluted Dirt once its decomposition amount reaches 600 s. */
+const ROT_PILE_SECONDS = 600
+
 export function buildGraph(d: GameData): Graph {
   const processes: Process[] = []
   const elementIds = new Set(d.elements.filter((e) => !e.disabled).map((e) => e.id))
+  const itemIds = new Set(d.items.map((it) => it.id))
   const add = (p: Omit<Process, 'id'> & { id?: string }) => {
     if (p.outputs.length === 0) return
     processes.push({ ...p, id: p.id ?? `${p.kind}:${p.viaId}:${processes.length}` })
@@ -154,6 +172,38 @@ export function buildGraph(d: GameData): Graph {
     }
   }
 
+  // Food left out spoils into a Rot Pile of the same mass, and a Rot Pile decomposes into
+  // Polluted Dirt of the same mass one cycle after it forms.
+  if (itemIds.has('RotPile')) {
+    for (const it of d.items) {
+      if (it.kind !== 'food' || !it.spoilSeconds) continue
+      add({
+        kind: 'rot',
+        via: it.name,
+        viaId: it.id,
+        inputs: [{ tag: it.id, amount: 1 }],
+        outputs: [{ tag: 'RotPile', amount: 1 }],
+        dlc: it.dlc,
+        needs: {},
+        notes: [`after ${fmt(it.spoilSeconds / d.tuning.secondsPerCycle)} cycles unrefrigerated`],
+        seconds: it.spoilSeconds,
+      })
+    }
+    if (elementIds.has('ToxicSand')) {
+      add({
+        kind: 'rot',
+        via: label('RotPile'),
+        viaId: 'RotPile',
+        inputs: [{ tag: 'RotPile', amount: 1 }],
+        outputs: [{ tag: 'ToxicSand', amount: 1 }],
+        dlc: NONE,
+        needs: {},
+        notes: [`${fmt(ROT_PILE_SECONDS / d.tuning.secondsPerCycle)} cycle after it forms`],
+        seconds: ROT_PILE_SECONDS,
+      })
+    }
+  }
+
   // Items that off-gas (slime, polluted dirt...).
   for (const it of d.items) {
     if (it.sublimates && elementIds.has(it.sublimates.element)) {
@@ -174,6 +224,30 @@ export function buildGraph(d: GameData): Graph {
   // name the one it uses. A "doNotConsume" ingredient is not a catalyst: the fabricator
   // transfers its mass into the product (the Dehydrator's food becomes the dried food),
   // so it is an input like any other.
+  // Inputs named by a tag rather than a thing ("Compostable", "Filter") take any element or
+  // item carrying that tag. The Composter's compostables are copies of the real items (the
+  // "CompostX" prefabs a Duplicant marks for compost), so they are mapped back to the items.
+  const classes = new Map<string, string[]>()
+  const members = (tag: string): string[] => {
+    let list = classes.get(tag)
+    if (list) return list
+    list = []
+    for (const e of d.elements) if (!e.disabled && e.tags.includes(tag)) list.push(e.id)
+    for (const it of d.items) {
+      if (!it.tags.includes(tag)) continue
+      const base = it.id.startsWith('Compost') && itemIds.has(it.id.slice(7)) ? it.id.slice(7) : it.id
+      if (!list.includes(base)) list.push(base)
+    }
+    classes.set(tag, list)
+    return list
+  }
+  const classInput = (tag: string, amount: number): Flow => {
+    if (elementIds.has(tag) || itemIds.has(tag)) return { tag, amount }
+    const list = members(tag)
+    if (list.length === 0) return { tag, amount }
+    return { tag: list[0]!, amount, anyOf: list.length > 1 ? list : undefined, anyOfName: CLASS_NAMES[tag] ?? tag.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase() }
+  }
+
   const buildingDlc = new Map(d.buildings.map((b) => [b.id, b.dlc]))
   for (const r of d.recipes) {
     const combos = cartesian(r.ingredients.map((i) => i.options))
@@ -185,7 +259,7 @@ export function buildGraph(d: GameData): Graph {
           kind: 'recipe',
           via: label(fab),
           viaId: fab,
-          inputs: combo.map((o) => ({ tag: o.tag, amount: o.amount })),
+          inputs: combo.map((o) => classInput(o.tag, o.amount)),
           outputs: r.results.map((x) => ({ tag: x.tag, amount: x.amount })),
           dlc: buildingDlc.get(fab) ?? NONE,
           needs: { building: fab, extras: extras.length ? extras : undefined },
@@ -198,7 +272,7 @@ export function buildGraph(d: GameData): Graph {
 
   // Continuous converters: rates per second on both sides, normalised to per second.
   for (const b of d.buildings) {
-    const inputs = b.inputs.map((f) => ({ tag: f.tag, amount: f.rate ?? f.amountPerUse ?? 0 }))
+    const inputs = b.inputs.map((f) => classInput(f.tag, f.rate ?? f.amountPerUse ?? 0))
     const outputs = b.outputs
       .map((f) => ({ tag: f.tag, amount: f.rate ?? f.amountPerUse ?? 0 }))
       .filter((f) => f.amount > 0 && (elementIds.has(f.tag) || d.names[f.tag]))

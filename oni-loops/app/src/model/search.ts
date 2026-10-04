@@ -255,7 +255,7 @@ export function answer(graph: Graph, target: string, colony: Colony, tiers: Tier
     if (reason) locked.push({ process: p, reason })
     else producers.push(p)
   }
-  const order: Record<string, number> = { recipe: 0, converter: 1, diet: 2, crop: 3, shear: 4, egg: 5, grow: 6, drop: 7, seed: 8, 'harvest-bonus': 9, transition: 10, sublimate: 11, geyser: 12, worldgen: 13, starmap: 14 }
+  const order: Record<string, number> = { recipe: 0, converter: 1, diet: 2, crop: 3, shear: 4, egg: 5, grow: 6, drop: 7, seed: 8, 'harvest-bonus': 9, transition: 10, sublimate: 11, rot: 11, geyser: 12, worldgen: 13, starmap: 14 }
   producers.sort((a, b) => (order[a.kind] ?? 99) - (order[b.kind] ?? 99) || a.via.localeCompare(b.via))
   const cycles = findLoops(graph, target, colony, tiers, 6, 200)
   const loops = cycles.filter((l) => l.ratio >= colony.loopFloor)

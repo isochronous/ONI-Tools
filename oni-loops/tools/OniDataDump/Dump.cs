@@ -192,6 +192,10 @@ namespace OniDataDump
 				Edible edible = prefab.GetComponent<Edible>();
 				if (edible != null)
 					o["calories"] = edible.FoodInfo?.CaloriesPerUnit ?? 0f;
+				// Food that can rot carries a Rottable def; it becomes a Rot Pile of the same mass.
+				Rottable.Def rot = prefab.GetDef<Rottable.Def>();
+				if (rot != null && rot.spoilTime > 0f)
+					o["spoilSeconds"] = rot.spoilTime;
 				Sublimates sublimates = prefab.GetComponent<Sublimates>();
 				if (sublimates != null)
 					o["sublimates"] = new JObject { ["element"] = sublimates.info.sublimatedElement.ToString(), ["rate"] = sublimates.info.sublimationRate };

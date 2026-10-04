@@ -28,6 +28,7 @@ const KIND_TITLES: Record<ProcessKind, string> = {
   'harvest-bonus': 'Bonus on skilled harvests',
   transition: 'Phase change (heating or cooling in-world)',
   sublimate: 'Off-gassing',
+  rot: 'Spoiling and decomposing',
   geyser: 'Geysers and vents',
   worldgen: 'In the terrain of',
   starmap: 'Brought back by rockets from',
@@ -51,7 +52,7 @@ const groups = computed(() => {
 function inputText(f: Flow): string {
   if (!f.anyOf) return `${fmt(f.amount)} ${label(f.tag)}`
   const kinds = new Set(f.anyOf.map((t) => graph.kinds.get(t) ?? 'item'))
-  const what = kinds.size === 1 ? `any ${[...kinds][0]}` : 'any of these'
+  const what = f.anyOfName ? `any ${f.anyOfName}` : kinds.size === 1 ? `any ${[...kinds][0]}` : 'any of these'
   return `${fmt(f.amount)} ${what} (${f.anyOf.length} kinds)`
 }
 

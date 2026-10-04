@@ -51,6 +51,8 @@ export interface ItemData {
   dlc: DlcRestriction
   kind: 'food' | 'seed' | 'egg' | 'critter' | 'plant' | 'item'
   calories?: number
+  /** Seconds until this food spoils at room temperature; absent for food that never spoils. */
+  spoilSeconds?: number
   sublimates?: { element: string; rate: number }
 }
 
