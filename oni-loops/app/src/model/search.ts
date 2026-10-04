@@ -23,7 +23,11 @@ export interface Colony {
    * is a side-stream: the target rides along a process that mostly eats something else.
    */
   primaryShare: number
+  /** The return a loop should be driven to when an intermediate can be topped up (1 = just closed). */
+  topUpRatio: number
 }
+
+export const DEFAULT_TOP_UP_RATIO = 1
 
 export const DEFAULT_PRIMARY_SHARE = 0.5
 
@@ -66,12 +70,12 @@ export interface Loop {
    * `amount` is the extra per unit of target, fed to step `step`. When set, `externals` and
    * `byproducts` describe the loop run that way.
    */
-  topUp?: { tag: string; amount: number; tier: Tier; step: number }
+  topUp?: { tag: string; amount: number; tier: Tier; step: number; ratio: number }
 }
 
 /** What the loop returns per unit of target once any top-up is applied. */
 export function effectiveRatio(loop: Loop): number {
-  return loop.topUp ? 1 : loop.ratio
+  return loop.topUp ? loop.topUp.ratio : loop.ratio
 }
 
 /** Net-positive, or closable to exactly 1 with a cheap top-up of an intermediate. */
@@ -234,13 +238,14 @@ export function isPositive(loop: Loop): boolean {
 /**
  * A loop short of 1 is not necessarily limited: if an intermediate is something the colony
  * can add from outside (polluted water from a geyser), the steps after it can be run harder
- * until the loop returns exactly 1. The best-placed such intermediate (by tier, then an element
+ * until the loop returns what the colony asks for (1, or more). The best-placed such intermediate (by tier, then an element
  * over an item, then the earliest) becomes the loop's top-up, and the flows are recomputed for
  * that run.
  */
 function closeWithTopUp(graph: Graph, loop: Loop, target: string, colony: Colony, tiers: Tiers): Loop {
-  if (loop.ratio >= 1 || loop.ratio <= 0 || loop.steps.length < 2) return loop
-  const scale = 1 / loop.ratio
+  const want = Math.max(1, colony.topUpRatio)
+  if (loop.ratio >= want || loop.ratio <= 0 || loop.steps.length < 2) return loop
+  const scale = want / loop.ratio
   let best: Loop['topUp'] | undefined
   let before = 1
   for (let i = 0; i < loop.steps.length - 1; i++) {
@@ -252,7 +257,7 @@ function closeWithTopUp(graph: Graph, loop: Loop, target: string, colony: Colony
     // Prefer a bulk element (polluted water) over an item (figs), then the earliest point in
     // the chain, so the whole chain downstream is what gets run harder.
     const better = !best || TIER_ORDER[tier] < TIER_ORDER[best.tier] || (tier === best.tier && graph.elements.has(tag) && !graph.elements.has(best.tag))
-    if (better) best = { tag, amount, tier, step: i + 1 }
+    if (better) best = { tag, amount, tier, step: i + 1, ratio: want }
   }
   if (!best) return loop
   const closed = summarise(graph, loop.steps, loop.ratio, target, colony, tiers, { from: best.step, scale })

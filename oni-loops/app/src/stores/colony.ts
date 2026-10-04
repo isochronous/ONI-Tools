@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { chooseDataSet, dataSet, gameData, SPACED_OUT } from '../data/load'
-import { DEFAULT_PRIMARY_SHARE, type Colony } from '../model/search'
+import { DEFAULT_PRIMARY_SHARE, DEFAULT_TOP_UP_RATIO, type Colony } from '../model/search'
 import { guaranteedGeysers } from '../model/tiers'
 
 const STORAGE_KEY = 'oni-loops.colony'
@@ -17,6 +17,7 @@ interface Saved {
   /** Geyser types found on the map beyond the guaranteed ones. */
   extraGeysers: string[]
   primaryShare: number
+  topUpRatio?: number
 }
 
 function load(): Saved | null {
@@ -41,6 +42,7 @@ export const useColonyStore = defineStore('colony', () => {
   const cluster = ref<string | null>(saved?.cluster ?? null)
   const primaryShare = ref(saved?.v === SAVED_VERSION ? (saved.primaryShare ?? DEFAULT_PRIMARY_SHARE) : DEFAULT_PRIMARY_SHARE)
   const extraGeysers = ref(new Set(saved?.extraGeysers ?? []))
+  const topUpRatio = ref(saved?.topUpRatio ?? DEFAULT_TOP_UP_RATIO)
 
   const clusterData = computed(() => gameData.clusters.find((c) => c.id === cluster.value) ?? null)
   /** Guaranteed by the cluster's worldgen rules, keyed by geyser type. */
@@ -54,6 +56,7 @@ export const useColonyStore = defineStore('colony', () => {
     cluster: cluster.value,
     geysers: geysers.value,
     primaryShare: primaryShare.value,
+    topUpRatio: topUpRatio.value,
   }))
 
   function toggleGeyser(id: string) {
@@ -65,7 +68,7 @@ export const useColonyStore = defineStore('colony', () => {
 
   function save(c: Colony) {
     try {
-      const data: Saved = { v: SAVED_VERSION, dlcs: [...c.dlcs], critters: c.critters ? [...c.critters] : null, loopFloor: c.loopFloor, cluster: c.cluster, extraGeysers: [...extraGeysers.value], primaryShare: c.primaryShare }
+      const data: Saved = { v: SAVED_VERSION, dlcs: [...c.dlcs], critters: c.critters ? [...c.critters] : null, loopFloor: c.loopFloor, cluster: c.cluster, extraGeysers: [...extraGeysers.value], primaryShare: c.primaryShare, topUpRatio: c.topUpRatio }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     } catch {
       /* storage may be unavailable */
@@ -100,5 +103,5 @@ export const useColonyStore = defineStore('colony', () => {
 
   watch(colony, save, { deep: true })
 
-  return { dlcs, critters, loopFloor, primaryShare, cluster, clusterData, guaranteed, extraGeysers, geysers, colony, toggleDlc, setCritter, assumeAllCritters, toggleGeyser }
+  return { dlcs, critters, loopFloor, primaryShare, topUpRatio, cluster, clusterData, guaranteed, extraGeysers, geysers, colony, toggleDlc, setCritter, assumeAllCritters, toggleGeyser }
 })

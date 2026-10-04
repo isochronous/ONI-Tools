@@ -7,7 +7,8 @@ import { TIER_LABEL, type Tiers } from '../model/tiers'
 
 const props = defineProps<{ loop: Loop; target: string; tiers: Tiers }>()
 
-const positive = computed(() => isPositive(props.loop))
+/** Green when the loop pays back on its own or with its top-up. */
+const positive = computed(() => isPositive(props.loop) || props.loop.topUp !== undefined)
 
 function how(s: Step): string {
   return stepLabel(s.process)
@@ -23,9 +24,9 @@ function needsOf(s: Step): string[] {
   <article class="loop" :class="{ positive }">
     <header>
       <span class="ratio">×{{ fmt(effectiveRatio(loop)) }}</span>
-      <span class="tier">{{ positive ? 'net-positive loop' : loop.topUp ? 'closes with a top-up' : 'top-up loop' }}</span>
+      <span class="tier">{{ loop.topUp ? 'with a top-up' : positive ? 'net-positive loop' : 'top-up loop' }}</span>
       <span v-if="!loop.primary" class="side" :title="`At one step ${label(target)}'s share of what the machine eats is only ${fmt(loop.minShare * 100)}%; the rest is the real cost.`">side-stream</span>
-      <span v-if="!positive && loop.topUp" class="shortfall">with {{ fmt(loop.topUp.amount) }} extra {{ label(loop.topUp.tag) }} ({{ TIER_LABEL[loop.topUp.tier] }}) per {{ label(target) }} fed into step {{ loop.topUp.step + 1 }}; ×{{ fmt(loop.ratio) }} on its own</span>
+      <span v-if="loop.topUp" class="shortfall">with {{ fmt(loop.topUp.amount) }} extra {{ label(loop.topUp.tag) }} ({{ TIER_LABEL[loop.topUp.tier] }}) per {{ label(target) }} fed into step {{ loop.topUp.step + 1 }}; ×{{ fmt(loop.ratio) }} on its own</span>
       <span v-else-if="!positive" class="shortfall">returns {{ fmt(loop.ratio) }} per 1 {{ label(target) }}; top up {{ fmt(1 - loop.ratio) }} elsewhere</span>
     </header>
     <ol class="chain">

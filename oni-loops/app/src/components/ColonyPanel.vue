@@ -93,6 +93,11 @@ function has(id: string) {
         <input v-model.number="store.primaryShare" type="range" min="0" max="1" step="0.05" />
       </label>
       <p class="hint">Side-stream loops ride along a machine that mostly eats something else (steam into an oil refinery); they are listed last.</p>
+      <label class="slider">
+        Drive topped-up loops to return <strong>×{{ store.topUpRatio }}</strong>
+        <input v-model.number="store.topUpRatio" type="range" min="1" max="10" step="0.5" />
+      </label>
+      <p class="hint">When a loop's intermediate can be added from outside (polluted water from a geyser), the chain after it is run harder until the loop returns this much; the card lists how much extra to feed.</p>
     </div>
 
     <div class="group">
