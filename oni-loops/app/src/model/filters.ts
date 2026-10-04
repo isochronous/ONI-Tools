@@ -40,6 +40,12 @@ function key(group: FacetGroup, id: string): string {
   return `${group}:${id}`
 }
 
+/** Eggs and critters follow from which critters the colony can ranch, which the Critters group already covers. */
+function isMaterialFacet(graph: Graph, tag: string): boolean {
+  const kind = graph.kinds.get(tag)
+  return kind !== 'egg' && kind !== 'critter'
+}
+
 function doerKeys(p: Process, keys: Set<string>) {
   if (p.needs.building) keys.add(key('machine', p.needs.building))
   if (p.needs.critter) keys.add(key('critter', p.needs.critter))
@@ -51,7 +57,8 @@ export function processKeys(graph: Graph, p: Process, target: string): string[] 
   const keys = new Set<string>()
   doerKeys(p, keys)
   for (const f of p.inputs)
-    if (!f.anyOf && f.tag !== target) keys.add(key(materialGroup(graph, f.tag), f.tag))
+    if (!f.anyOf && f.tag !== target && isMaterialFacet(graph, f.tag))
+      keys.add(key(materialGroup(graph, f.tag), f.tag))
   return [...keys]
 }
 
@@ -60,9 +67,11 @@ export function chainKeys(graph: Graph, chain: Chain): string[] {
   const keys = new Set<string>()
   for (const n of nodesOf(chain)) {
     doerKeys(n.process, keys)
-    if (n.output !== chain.target) keys.add(key(materialGroup(graph, n.output), n.output))
+    if (n.output !== chain.target && isMaterialFacet(graph, n.output))
+      keys.add(key(materialGroup(graph, n.output), n.output))
     for (const i of n.inputs)
-      if (!i.node && !i.feedback) keys.add(key(materialGroup(graph, i.tag), i.tag))
+      if (!i.node && !i.feedback && isMaterialFacet(graph, i.tag))
+        keys.add(key(materialGroup(graph, i.tag), i.tag))
   }
   return [...keys]
 }
