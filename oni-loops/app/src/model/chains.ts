@@ -163,8 +163,9 @@ function worse(a: Tier, b: Tier): Tier {
 }
 
 /**
- * Of two shapes making the same thing, the one to prefer: no feedback over feedback, then the
- * easier tier, then one a colony would build (within the allowance per unit), then fewer
+ * Of two shapes making the same thing, the one to prefer: one a colony would build (within
+ * the allowance at the asked rate), then the easier tier (the target fed back counts as
+ * renewable: a loop is a fine way to make more of something), then fewer
  * processes, then less scale (a Gnit every 4.5 cycles over a Puft every 45), then one that
  * pipes its product out, then a building over an in-world phase change (a Kiln leads, "or
  * heated in-world" follows), then fewer DLCs.
@@ -173,7 +174,6 @@ function compareShapes(a: Shape, b: Shape): number {
   return (
     Number(a.impractical) - Number(b.impractical) ||
     Number(a.incidental) - Number(b.incidental) ||
-    Number(a.feedback > 0) - Number(b.feedback > 0) ||
     Number(a.strain > 1) - Number(b.strain > 1) ||
     TIER_ORDER[a.tier] - TIER_ORDER[b.tier] ||
     a.size - b.size ||
@@ -266,13 +266,31 @@ export function findChains(
     }
   }
 
-  function expand(p: Process, output: string, depth: number, need: number): Shape | null {
+  /**
+   * `fed`: an input already decided (the previous step of a loop followed forward), given as
+   * the tag it supplies and the shape making it, or feedback of the target itself.
+   */
+  function expand(
+    p: Process,
+    output: string,
+    depth: number,
+    need: number,
+    fed?: { tag: string; shape?: Shape },
+  ): Shape | null {
     const out = p.outputs.find((f) => f.tag === output)
     if (!out || out.amount <= 0) return null
     const ownTier = sourceTier(p, colony, tiers)
     if (ownTier === null) return null // terrain of a world outside the colony's cluster
     const inputs: ShapeInput[] = []
     for (const f of p.inputs) {
+      if (fed && (f.tag === fed.tag || f.anyOf?.includes(fed.tag))) {
+        inputs.push(
+          fed.shape
+            ? { flow: f, tag: fed.tag, shape: fed.shape, tier: fed.shape.tier }
+            : { flow: f, tag: fed.tag, feedback: true, tier: 'renewable' },
+        )
+        continue
+      }
       // Any one of an any-of input's options will do: take the best-placed one.
       let chosen: ShapeInput | null = null
       for (const tag of f.anyOf ?? [f.tag]) {
@@ -298,7 +316,6 @@ export function findChains(
 
   function betterInput(a: ShapeInput, b: ShapeInput): boolean {
     const d =
-      Number(!!a.feedback) - Number(!!b.feedback) ||
       Number((a.shape?.strain ?? 0) > 1) - Number((b.shape?.strain ?? 0) > 1) ||
       TIER_ORDER[a.tier] - TIER_ORDER[b.tier] ||
       (a.shape?.size ?? 0) - (b.shape?.size ?? 0) ||
@@ -355,6 +372,45 @@ export function findChains(
     return found
   }
 
+  /**
+   * The tree of materials and ratios, ignoring which process does each step: two chains with
+   * the same key are one way done with different machines, and fold into one with alternatives.
+   */
+  function materialKey(shape: Shape): string {
+    const out = shape.process.outputs.find((f) => f.tag === shape.output)!
+    return (
+      shape.output +
+      '(' +
+      shape.inputs
+        .map(
+          (i) =>
+            `${i.tag}:${(i.flow.amount / out.amount).toPrecision(4)}${i.shape ? '=' + materialKey(i.shape) : ''}`,
+        )
+        .sort()
+        .join(',') +
+      ')'
+    )
+  }
+
+  /** Adds `other`'s way of doing each step to `best`, where the two chains use different processes for the same step. */
+  function foldInto(best: Shape, other: Shape) {
+    if (
+      stepLabel(other.process) !== stepLabel(best.process) &&
+      !best.alternatives.some((p) => stepLabel(p) === stepLabel(other.process))
+    )
+      best.alternatives.push(other.process)
+    for (const alt of other.alternatives)
+      if (
+        stepLabel(alt) !== stepLabel(best.process) &&
+        !best.alternatives.some((p) => stepLabel(p) === stepLabel(alt))
+      )
+        best.alternatives.push(alt)
+    for (const i of best.inputs) {
+      const match = other.inputs.find((j) => j.tag === i.tag && !!j.shape === !!i.shape)
+      if (i.shape && match?.shape) foldInto(i.shape, match.shape)
+    }
+  }
+
   /** The tree of process ids, to tell two ways apart. */
   function signature(shape: Shape): string {
     return (
@@ -392,18 +448,89 @@ export function findChains(
     return out
   }
 
-  const chains: Chain[] = []
-  const seen = new Set<string>()
-  for (const shape of ways(target, 0, perCycle).flatMap(variants)) {
+  /**
+   * Loops followed forward from the target: a process that consumes it, then one that
+   * consumes what that made, and so on until one makes the target again. The backward search
+   * only ever picks each input's best route, which hides a loop whose point is its return
+   * (1 kg of Diamond into an Ancient Specimen comes back as 38 kg), so these are found on
+   * their own and each turned into a chain whose first step is fed the target itself.
+   */
+  function forwardLoops(): Shape[] {
+    const found: Shape[] = []
+    const MAX_LOOPS = 60
+    const walk = (
+      current: string,
+      path: { p: Process; from: string; to: string }[],
+      visited: Set<string>,
+    ) => {
+      if (found.length >= MAX_LOOPS) return
+      for (const p of graph.byInput.get(current) ?? []) {
+        if (isAvailable(p, colony)) continue
+        if (p.kind === 'worldgen' || p.kind === 'geyser' || p.kind === 'starmap') continue
+        for (const o of p.outputs) {
+          if (o.amount <= 0) continue
+          const step = { p, from: current, to: o.tag }
+          if (o.tag === target) {
+            if (path.length === 0) continue // X straight back to X is no loop
+            const shape = loopShape([...path, step])
+            if (shape) found.push(shape)
+            continue
+          }
+          if (path.length + 1 >= MAX_DEPTH || visited.has(o.tag)) continue
+          walk(o.tag, [...path, step], new Set([...visited, o.tag]))
+        }
+      }
+    }
+    walk(target, [], new Set([target]))
+    return found
+  }
+
+  /** The chain for a forward path, built from its first step (fed the target) to its last (making it). */
+  function loopShape(path: { p: Process; from: string; to: string }[]): Shape | null {
+    // Amounts flow forward from one unit of target in; the chain is then scaled to the rate.
+    let need = perCycle
+    const needs: number[] = []
+    for (const step of path) {
+      const input = step.p.inputs.find((f) => f.tag === step.from || f.anyOf?.includes(step.from))
+      const out = step.p.outputs.find((f) => f.tag === step.to)
+      if (!input || !out) return null
+      needs.push(need)
+      need = (need / input.amount) * out.amount
+    }
+    // Build from the end: each step needs as much as the loop's output rate demands of it.
+    const scale = perCycle / need // so the last step makes perCycle
+    let fed: { tag: string; shape?: Shape } = { tag: target }
+    let shape: Shape | null = null
+    for (const [i, step] of path.entries()) {
+      stack.add(step.to)
+      shape = expand(step.p, step.to, path.length - 1 - i, needs[i]! * scale, fed)
+      stack.delete(step.to)
+      if (!shape) return null
+      fed = { tag: step.to, shape }
+    }
+    return shape
+  }
+
+  // One chain per way through the materials; the same way done with other machines folds in.
+  const byMaterials = new Map<string, Shape>()
+  for (const shape of [...ways(target, 0, perCycle).flatMap(variants), ...forwardLoops()]) {
     if (shape.feedback >= 1 - 1e-9) continue // feeds itself everything it makes
     // A step run for something else, with the target coming off the side (a Polymer Press's
     // wisp of steam), is not a way to make it at any rate: the ratio never changes.
     if (shape.incidental) continue
     // "Dig it up" is not a way to make something; the tier line already says it is in the terrain.
     if (shape.process.kind === 'worldgen') continue
-    const sig = signature(shape)
-    if (seen.has(sig)) continue
-    seen.add(sig)
+    const key = materialKey(shape)
+    const existing = byMaterials.get(key)
+    if (!existing) byMaterials.set(key, shape)
+    else if (compareShapes(shape, existing) < 0) {
+      foldInto(shape, existing)
+      byMaterials.set(key, shape)
+    } else foldInto(existing, shape)
+  }
+
+  const chains: Chain[] = []
+  for (const shape of byMaterials.values()) {
     const net = 1 / (1 - shape.feedback)
     const root = materialise(shape, net)
     const chain: Chain = {
@@ -509,8 +636,8 @@ export function nodesOf(chain: Chain): Node[] {
  * Routes needing extreme in-world temperatures last of all, then routes a colony would not
  * build at the asked rate (over fifty plants, thirty critters, or ten buildings at one step);
  * otherwise easiest leaves first (a chain fed by geysers beats one needing a rocket), then chains the
- * colony's Duplicants can run at the asked rate, then those that feed on their own product
- * less, then shorter, then needing less from outside.
+ * colony's Duplicants can run at the asked rate, then loops (a chain that turns some of its
+ * own product into more of it is the best kind), then shorter, then needing less from outside.
  */
 export function compareChains(a: Chain, b: Chain): number {
   return (
@@ -518,7 +645,7 @@ export function compareChains(a: Chain, b: Chain): number {
     Number(a.strain > 1) - Number(b.strain > 1) ||
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
     Number(a.capped ?? false) - Number(b.capped ?? false) ||
-    Number(a.feedback > 0) - Number(b.feedback > 0) ||
+    Number(b.feedback > 0) - Number(a.feedback > 0) ||
     a.size - b.size ||
     cost(a) - cost(b)
   )
