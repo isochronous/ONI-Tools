@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { gameData } from '../data/load'
+import type { PlantMutationData } from '../data/types'
 import { DEFAULT_HAPPINESS, mutationFits } from '../model/graph'
 import { randomGeyserSlots } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
@@ -10,16 +11,19 @@ const showCritters = ref(false)
 const showPlants = ref(false)
 
 /** Plants that bear a crop under the chosen DLCs, with the mutations the game allows each. */
-const plants = computed(() =>
-  gameData.plants
-    .filter((p) => p.crop && !p.dlc.requires.some((id) => !store.dlcs.has(id)))
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      mutations: (gameData.plantMutations ?? []).filter((m) => mutationFits(m, p.id)),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name)),
-)
+const plants = computed(() => {
+  // The game has a few plants in two prefabs with one name (the Arbor Tree and its branch); one row serves both.
+  const byName = new Map<string, { ids: string[]; name: string; mutations: PlantMutationData[] }>()
+  for (const p of gameData.plants) {
+    if (!p.crop || p.dlc.requires.some((id) => !store.dlcs.has(id))) continue
+    const row = byName.get(p.name) ?? { ids: [], name: p.name, mutations: [] }
+    row.ids.push(p.id)
+    for (const m of gameData.plantMutations ?? [])
+      if (mutationFits(m, p.id) && !row.mutations.includes(m)) row.mutations.push(m)
+    byName.set(p.name, row)
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+})
 const mutatedCount = computed(() => Object.keys(store.mutations).length)
 
 /** Adult critters under the chosen DLCs; babies are covered by their adult. */
@@ -151,12 +155,16 @@ function has(id: string) {
           needs radiation to stay viable. Pick the mutation you are growing, if any.
         </p>
         <div class="list">
-          <div v-for="p in plants" :key="p.id" class="plant">
+          <div v-for="p in plants" :key="p.name" class="plant">
             <span>{{ p.name }}</span>
             <select
-              :value="store.mutations[p.id] ?? ''"
+              :value="store.mutations[p.ids[0]!] ?? ''"
               :aria-label="`${p.name} mutation`"
-              @change="store.setMutation(p.id, ($event.target as HTMLSelectElement).value)"
+              @change="
+                p.ids.forEach((id) =>
+                  store.setMutation(id, ($event.target as HTMLSelectElement).value),
+                )
+              "
             >
               <option value="">Plain</option>
               <option v-for="m in p.mutations" :key="m.id" :value="m.id">{{ m.name }}</option>
