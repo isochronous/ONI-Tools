@@ -409,14 +409,21 @@ namespace OniDataDump
 				if (inputs.Count == 0 && outputs.Count == 0)
 					continue;
 				usedBuildings.Add(def.PrefabID);
-				arr.Add(new JObject
+				var o = new JObject
 				{
 					["id"] = def.PrefabID,
 					["name"] = Plain(def.Name),
 					["dlc"] = new JObject { ["requires"] = new JArray(def.RequiredDlcIds ?? new string[0]), ["forbids"] = new JArray(def.ForbiddenDlcIds ?? new string[0]) },
 					["inputs"] = inputs,
 					["outputs"] = outputs,
-				});
+				};
+				// Whether the building takes its input from, and sends its product down, a pipe
+				// (a Lavatory) rather than the world (a Wall Toilet drops its polluted water).
+				if (def.InputConduitType != ConduitType.None)
+					o["inputConduit"] = def.InputConduitType.ToString();
+				if (def.OutputConduitType != ConduitType.None)
+					o["outputConduit"] = def.OutputConduitType.ToString();
+				arr.Add(o);
 			}
 			return arr;
 		}

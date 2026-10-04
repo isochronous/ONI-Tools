@@ -61,6 +61,8 @@ export interface Process {
   wildFactor?: number
   /** Human-readable qualifiers shown next to the step. */
   notes: string[]
+  /** True when a building sends its product down a pipe rather than dropping it in the world. */
+  pipedOutput?: boolean
   /** Time one run takes, in seconds, when known. */
   seconds?: number
 }
@@ -308,6 +310,7 @@ export function buildGraph(d: GameData): Graph {
       outputs,
       dlc: b.dlc,
       needs: { building: b.id, extras: hot.length ? hot : undefined },
+      pipedOutput: b.outputConduit !== undefined,
       notes: perUse ? ['per use'] : ['per second while running'],
       seconds: perUse ? undefined : 1,
     })

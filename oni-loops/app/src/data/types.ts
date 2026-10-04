@@ -88,6 +88,10 @@ export interface BuildingData {
   dlc: DlcRestriction
   inputs: BuildingFlow[]
   outputs: BuildingFlow[]
+  /** Pipe the building draws its input from ("Liquid", "Gas"), when it has one. */
+  inputConduit?: string
+  /** Pipe the building sends its product down, when it has one; otherwise it drops it in the world. */
+  outputConduit?: string
 }
 
 export interface DietData {
