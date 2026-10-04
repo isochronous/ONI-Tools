@@ -72,6 +72,14 @@ export interface Chain {
   ceilingNode?: Node
   /** True when `ceiling` is below what the player asked for. */
   capped?: boolean
+  /**
+   * How far the biggest step overshoots what a colony would build, at the asked rate: 1 is
+   * the allowance (50 plants, 30 critters, 10 buildings, 2 geysers), 10 is ten times it.
+   */
+  strain: number
+  strainNode?: Node
+  /** How many instances `strainNode` needs at the asked rate. */
+  strainCount?: number
   /** True when a step heats past 500 °C or cools below -50 °C in-world. */
   impractical: boolean
   /** True when a step is a building giving the material off while doing something else. */
@@ -366,8 +374,9 @@ export function findChains(
       makes: [],
       impractical: shape.impractical,
       incidental: shape.incidental,
+      strain: 0,
     }
-    summarise(chain, colony)
+    summarise(chain, colony, perCycle)
     chain.capped = chain.ceiling !== undefined && chain.ceiling < perCycle - 1e-9
     chains.push(chain)
   }
@@ -399,7 +408,10 @@ function materialise(shape: Shape, amount: number): Node {
 }
 
 /** Nets what the chain takes from outside and makes besides the target, and finds its Duplicant ceiling. */
-function summarise(chain: Chain, colony: Colony) {
+/** What a colony would reasonably build of each kind of thing for one product. */
+const ALLOWANCE = { building: 10, plant: 50, critter: 30, geyser: 2 } as const
+
+function summarise(chain: Chain, colony: Colony, perCycle: number) {
   const needs = new Map<string, Input>()
   const makes = new Map<string, number>()
   const visit = (n: Node) => {
@@ -421,6 +433,14 @@ function summarise(chain: Chain, colony: Colony) {
       if (chain.ceiling === undefined || most < chain.ceiling) {
         chain.ceiling = most
         chain.ceilingNode = n
+      }
+    } else if (t && n.runs > 0) {
+      const count = (n.runs / t.runsPerCycle) * perCycle
+      const strain = count / ALLOWANCE[t.instance as keyof typeof ALLOWANCE]
+      if (strain > chain.strain) {
+        chain.strain = strain
+        chain.strainNode = n
+        chain.strainCount = count
       }
     }
   }
@@ -446,7 +466,8 @@ export function nodesOf(chain: Chain): Node[] {
 /**
  * Routes needing extreme in-world temperatures last of all, then routes that only pick up
  * what a building gives off while doing something else; otherwise easiest leaves first
- * (a chain fed by geysers beats one needing a rocket), then chains the
+ * (a chain fed by geysers beats one needing a rocket), then chains that stay within what a
+ * colony would build at the asked rate (fifty plants, thirty critters, ten buildings), then chains the
  * colony's Duplicants can run at the asked rate, then those that feed on their own product
  * less, then shorter, then needing less from outside.
  */
@@ -456,6 +477,7 @@ export function compareChains(a: Chain, b: Chain): number {
     Number(a.incidental) - Number(b.incidental) ||
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
     Number(a.capped ?? false) - Number(b.capped ?? false) ||
+    Number(a.strain > 1) - Number(b.strain > 1) ||
     Number(a.feedback > 0) - Number(b.feedback > 0) ||
     a.size - b.size ||
     cost(a) - cost(b)

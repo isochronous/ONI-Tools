@@ -67,7 +67,7 @@ for (const target of process.argv.slice(3).length
   console.log(`\n== ${label(target)}: ${a.chains.length} ways, ${a.locked.length} locked`)
   for (const c of a.chains.slice(0, 4)) {
     console.log(
-      `  [${c.worstTier}] ${c.size} steps${c.feedback ? `, feedback ${fmt(c.feedback * 100)}%` : ''}${c.ceiling !== undefined ? `, ceiling ${fmt(c.ceiling)}/cycle${c.capped ? ' (capped)' : ''}` : ''}`,
+      `  [${c.worstTier}] ${c.size} steps${c.feedback ? `, feedback ${fmt(c.feedback * 100)}%` : ''}${c.strain > 1 ? `, strain ${fmt(c.strain)} (${fmt(c.strainCount ?? 0)} at ${stepLabel(c.strainNode!.process)})` : ''}${c.ceiling !== undefined ? `, ceiling ${fmt(c.ceiling)}/cycle${c.capped ? ' (capped)' : ''}` : ''}`,
     )
     show(c.root, 0)
     if (c.needs.length)

@@ -22,6 +22,14 @@ const HEADLINE: Record<string, string> = {
 
 const unit = computed(() => unitOf(props.target).trim() || 'unit of')
 
+const INSTANCE_NOUN: Record<string, string> = {
+  building: 'of them',
+  plant: 'plants',
+  critter: 'critters',
+  geyser: 'geysers',
+  duplicant: 'Duplicants',
+}
+
 /** Joins names the way a sentence would: "a", "a and b", "a, b, and c". */
 function list(parts: string[]): string {
   if (parts.length <= 1) return parts[0] ?? ''
@@ -78,6 +86,12 @@ const costText = computed(() => {
       <p v-if="chain.impractical" class="capped">
         A step here needs an in-world temperature past 500 °C or below −50 °C: a volcano, a magma
         pool, or serious engineering.
+      </p>
+      <p v-if="chain.strain > 1" class="capped">
+        At this rate the {{ stepLabel(chain.strainNode!.process) }} step needs
+        {{ fmt(Math.ceil(chain.strainCount!)) }}
+        {{ INSTANCE_NOUN[chain.strainNode!.process.throughput!.instance] }}, more than a colony
+        would build for this.
       </p>
       <p v-if="chain.ceiling !== undefined && chain.ceiling < perCycle - 1e-9" class="capped">
         With {{ store.duplicants }} Duplicants this chain makes at most
