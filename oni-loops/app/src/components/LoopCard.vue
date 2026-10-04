@@ -10,6 +10,23 @@ const props = defineProps<{ loop: Loop; target: string; tiers: Tiers }>()
 /** Green when the loop pays back on its own or with its top-up. */
 const positive = computed(() => isPositive(props.loop) || props.loop.topUp !== undefined)
 
+/**
+ * Units arriving at step `i` per unit of target, including the top-up once the chain has
+ * been boosted (from the top-up step on, everything runs harder by the same factor).
+ */
+function into(i: number): number {
+  let amount = 1
+  for (let k = 0; k < i; k++) amount *= props.loop.steps[k]!.ratio
+  const t = props.loop.topUp
+  if (t && i >= t.step) amount *= t.ratio / props.loop.ratio
+  return amount
+}
+
+/** Units leaving step `i`, likewise. */
+function outOf(i: number): number {
+  return into(i + 1)
+}
+
 function how(s: Step): string {
   return stepLabel(s.process)
 }
@@ -31,7 +48,7 @@ function needsOf(s: Step): string[] {
     </header>
     <ol class="chain">
       <li v-for="(s, i) in loop.steps" :key="i">
-        <span class="from">{{ i === 0 ? '1' : fmt(loop.steps.slice(0, i).reduce((r, x) => r * x.ratio, 1)) }} {{ label(s.from) }}<small v-if="loop.topUp && loop.topUp.step === i" class="topup">+ {{ fmt(loop.topUp.amount) }} top-up</small></span>
+        <span class="from">{{ fmt(into(i)) }} {{ label(s.from) }}<small v-if="loop.topUp && loop.topUp.step === i" class="topup">incl. {{ fmt(loop.topUp.amount) }} top-up</small></span>
         <span class="arrow">→</span>
         <span class="how">
           {{ how(s) }}
@@ -39,7 +56,7 @@ function needsOf(s: Step): string[] {
           <small v-if="s.alternatives?.length" class="alt" :title="s.alternatives.join(', ')">or {{ s.alternatives.slice(0, 3).join(', or ') }}<template v-if="s.alternatives.length > 3"> and {{ s.alternatives.length - 3 }} more</template></small>
         </span>
         <span class="arrow">→</span>
-        <span class="to">{{ fmt(loop.steps.slice(0, i + 1).reduce((r, x) => r * x.ratio, 1)) }} {{ label(s.to) }}</span>
+        <span class="to">{{ fmt(outOf(i)) }} {{ label(s.to) }}</span>
       </li>
     </ol>
     <footer v-if="loop.externals.length || loop.byproducts.length">
