@@ -1,4 +1,4 @@
-import type { DlcRestriction, GameData } from '../data/types'
+import type { DlcRestriction, GameData, PlantMutationData } from '../data/types'
 import { label, unnamed } from '../data/load'
 
 /**
@@ -183,6 +183,13 @@ const ROT_PILE_SECONDS = 600
 export interface GraphOptions {
   /** A tame critter's happiness, by critter id; tame and groomed is 4 (groomed +5, tame -1). */
   happiness?: (critterId: string) => number
+  /** The mutation a plant's seeds carry, by plant id; undefined for the plain plant. */
+  mutation?: (plantId: string) => string | undefined
+}
+
+/** True when a mutation can occur on a plant (the game rolls only among these). */
+export function mutationFits(m: PlantMutationData, plantId: string): boolean {
+  return !m.notFor?.includes(plantId) && (!m.onlyFor?.length || m.onlyFor.includes(plantId))
 }
 
 /** Happiness of a tame, groomed critter: the +5 of grooming less the -1 of being tame. */
@@ -594,12 +601,31 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
   }
 
   // Plants.
+  const mutations = new Map((d.plantMutations ?? []).map((m) => [m.id, m]))
   for (const p of d.plants) {
     if (p.crop) {
-      const cycles = p.crop.durationSeconds / d.tuning.secondsPerCycle
+      // A mutated seed scales the plant's yield, growth time, and water or fertilizer use,
+      // may add a bonus crop, and needs radiation to stay viable.
+      const mutationId = options.mutation?.(p.id)
+      const mutation = mutationId ? mutations.get(mutationId) : undefined
+      const mutated = mutation && mutationFits(mutation, p.id) ? mutation : undefined
+      const yieldScale = 1 + (mutated?.yield ?? 0)
+      const growthScale = 1 + (mutated?.growth ?? 0)
+      const usageScale = 1 + (mutated?.usage ?? 0)
+      const duration = p.crop.durationSeconds * growthScale
+      const cycles = duration / d.tuning.secondsPerCycle
       const inputs: Flow[] = []
       for (const f of [...(p.irrigation ?? []), ...(p.fertilizer ?? [])])
-        inputs.push({ tag: f.tag, amount: f.rate * p.crop.durationSeconds })
+        inputs.push({ tag: f.tag, amount: f.rate * duration * usageScale })
+      // A bonus crop of the plant's own kind (Bonus Lice on a Mealwood) is simply more of it.
+      const bonusCrop = mutated?.bonusCrop
+      const extraOwn = bonusCrop && bonusCrop.tag === p.crop.item ? bonusCrop.amount : 0
+      const bonus: Flow[] =
+        bonusCrop && bonusCrop.tag !== p.crop.item
+          ? [{ tag: bonusCrop.tag, amount: bonusCrop.amount }]
+          : []
+      const count = p.crop.count * yieldScale + extraOwn
+      const mutationName = mutated ? ` (${mutated.name})` : ''
       // A flytrap eats one grown critter of the kinds it accepts before each harvest.
       const prey = (p.prey ?? []).filter((id) => ranchable.has(id))
       if (prey.length)
@@ -612,6 +638,8 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
       const extras: string[] = []
       if (p.branches) extras.push(`across up to ${p.branches} vines on one plant`)
       if (p.needsPollination) extras.push('needs pollination (Mimika, Sweetle, or Grubgrub)')
+      if (mutated?.minRadiation) extras.push(`needs ${fmt(mutated.minRadiation)} rads of radiation`)
+      if (mutated?.minLux) extras.push(`needs ${fmt(mutated.minLux)} lux of light`)
       // A Mimika's visit speeds growth for a while; one keeps a handful of plants going.
       const pollination = d.tuning.pollination
       const boost =
@@ -622,30 +650,30 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
           : []
       add({
         kind: 'crop',
-        via: p.name,
+        via: p.name + mutationName,
         viaId: p.id,
         inputs,
-        outputs: [{ tag: p.crop.item, amount: p.crop.count }],
+        outputs: [{ tag: p.crop.item, amount: count }, ...bonus],
         dlc: p.dlc,
         needs: { plant: p.id, extras: extras.length ? extras : undefined },
         throughput: { runsPerCycle: 1 / cycles, instance: 'plant' },
         notes: [`every ${fmt(cycles)} cycles when tended`, ...boost],
-        seconds: p.crop.durationSeconds,
+        seconds: duration,
       })
       // Wild (pip-planted) plants need no irrigation or fertilizer and grow at a fraction of the rate.
       const wild = d.tuning.wildPlantGrowthModifier
       add({
         kind: 'crop',
-        via: `${p.name} (wild)`,
+        via: `${p.name} (wild)` + mutationName,
         viaId: p.id,
         inputs: [],
-        outputs: [{ tag: p.crop.item, amount: p.crop.count }],
+        outputs: [{ tag: p.crop.item, amount: count }, ...bonus],
         dlc: p.dlc,
         needs: { plant: p.id, extras: extras.length ? extras : undefined },
         wildFactor: wild,
         throughput: { runsPerCycle: wild / cycles, instance: 'plant' },
         notes: [`every ${fmt(cycles / wild)} cycles when wild-planted; needs nothing`, ...boost],
-        seconds: p.crop.durationSeconds / wild,
+        seconds: duration / wild,
       })
       if (p.skilledHarvestBonus) {
         add({

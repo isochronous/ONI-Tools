@@ -23,6 +23,8 @@ interface Saved {
   hidden: string[]
   /** Tame critter happiness by critter id, where it differs from the groomed default. */
   happiness: Record<string, number>
+  /** The mutation each plant's seeds carry, by plant id, where one is chosen. */
+  mutations: Record<string, string>
 }
 
 function load(): Partial<Saved> | null {
@@ -61,6 +63,7 @@ export const useColonyStore = defineStore('colony', () => {
   const demandItems = ref(saved?.demandItems ?? 10)
   const hidden = ref(new Set(saved?.hidden ?? []))
   const happiness = ref<Record<string, number>>({ ...(saved?.happiness ?? {}) })
+  const mutations = ref<Record<string, string>>({ ...(saved?.mutations ?? {}) })
 
   const clusterData = computed(() => gameData.clusters.find((c) => c.id === cluster.value) ?? null)
   /** Guaranteed by the cluster's worldgen rules, keyed by geyser type. */
@@ -88,6 +91,7 @@ export const useColonyStore = defineStore('colony', () => {
         demandItems: demandItems.value,
         hidden: [...hidden.value],
         happiness: happiness.value,
+        mutations: mutations.value,
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     } catch {
@@ -122,6 +126,13 @@ export const useColonyStore = defineStore('colony', () => {
     critters.value = null
   }
 
+  function setMutation(plantId: string, mutationId: string) {
+    const next = { ...mutations.value }
+    if (mutationId) next[plantId] = mutationId
+    else delete next[plantId]
+    mutations.value = next
+  }
+
   function setHappiness(id: string, value: number) {
     happiness.value = { ...happiness.value, [id]: Math.max(-10, Math.min(10, Number(value) || 0)) }
   }
@@ -143,7 +154,7 @@ export const useColonyStore = defineStore('colony', () => {
     hidden.value = new Set()
   }
 
-  watch([colony, hidden, demandKg, demandItems, happiness], save, { deep: true })
+  watch([colony, hidden, demandKg, demandItems, happiness, mutations], save, { deep: true })
 
   return {
     dlcs,
@@ -158,6 +169,7 @@ export const useColonyStore = defineStore('colony', () => {
     geysers,
     hidden,
     happiness,
+    mutations,
     colony,
     toggleDlc,
     setCritter,
@@ -165,6 +177,7 @@ export const useColonyStore = defineStore('colony', () => {
     toggleGeyser,
     toggleHidden,
     setHappiness,
+    setMutation,
     setHidden,
     clearHidden,
   }

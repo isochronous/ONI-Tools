@@ -146,6 +146,23 @@ export interface PlantData {
   prey?: string[]
 }
 
+/** A radiation mutation a seed can carry; multipliers are the game's own (yield 0.5 means x1.5). */
+export interface PlantMutationData {
+  id: string
+  name: string
+  yield?: number
+  /** Growth time multiplier. */
+  growth?: number
+  /** Water and fertilizer use multiplier. */
+  usage?: number
+  bonusCrop?: { tag: string; amount: number }
+  /** Rads the plant needs to stay viable. */
+  minRadiation?: number
+  minLux?: number
+  onlyFor?: string[]
+  notFor?: string[]
+}
+
 export interface GeyserData {
   id: string
   element: string
@@ -225,6 +242,7 @@ export interface GameData {
   buildings: BuildingData[]
   /** Every fabricator, with whether a Duplicant works it for the whole craft. */
   fabricators?: { id: string; duplicantOperated: boolean }[]
+  plantMutations?: PlantMutationData[]
   critters: CritterData[]
   plants: PlantData[]
   geysers: GeyserData[]

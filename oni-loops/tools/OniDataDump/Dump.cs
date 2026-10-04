@@ -63,6 +63,7 @@ namespace OniDataDump
 				["fabricators"] = Fabricators(),
 				["critters"] = Critters(),
 				["plants"] = Plants(),
+				["plantMutations"] = PlantMutations(),
 				["geysers"] = Geysers(),
 				["worldgen"] = Worldgen(),
 				["clusters"] = Clusters(),
@@ -536,6 +537,48 @@ namespace OniDataDump
 						["seconds"] = scales.defaultGrowthRate > 0f ? 1f / scales.defaultGrowthRate : 0f,
 					};
 				}
+				arr.Add(o);
+			}
+			return arr;
+		}
+
+		/// <summary>
+		/// Radiation mutations a seed can carry: each scales the plant's yield, growth time, and
+		/// water or fertilizer use, may add a bonus crop per harvest, and needs radiation (and
+		/// sometimes light) to stay viable. Multipliers are given as the game applies them
+		/// (yield 0.5 means x1.5). The "original" entry is the unmutated plant and is skipped.
+		/// </summary>
+		private static JArray PlantMutations()
+		{
+			var arr = new JArray();
+			string yieldId = Db.Get().PlantAttributes.YieldAmount.Id;
+			string usageId = Db.Get().PlantAttributes.FertilizerUsageMod.Id;
+			string growthId = Db.Get().Amounts.Maturity.maxAttribute.Id;
+			string radiationId = Db.Get().PlantAttributes.MinRadiationThreshold.Id;
+			string luxId = Db.Get().PlantAttributes.MinLightLux.Id;
+			foreach (Klei.AI.PlantMutation m in Db.Get().PlantMutations.resources)
+			{
+				if (m.originalMutation)
+					continue;
+				var o = new JObject { ["id"] = m.Id, ["name"] = Plain(m.Name) };
+				foreach (Klei.AI.AttributeModifier mod in m.SelfModifiers)
+				{
+					if (mod.AttributeId == yieldId && mod.IsMultiplier) o["yield"] = mod.Value;
+					else if (mod.AttributeId == usageId && mod.IsMultiplier) o["usage"] = mod.Value;
+					else if (mod.AttributeId == growthId && mod.IsMultiplier) o["growth"] = mod.Value;
+					else if (mod.AttributeId == radiationId) o["minRadiation"] = mod.Value;
+					else if (mod.AttributeId == luxId) o["minLux"] = mod.Value;
+				}
+				// The bonus crop is a private pair of fields.
+				var bonus = HarmonyLib.Traverse.Create(m);
+				Tag bonusTag = bonus.Field("bonusCropID").GetValue<Tag>();
+				float bonusAmount = bonus.Field("bonusCropAmount").GetValue<float>();
+				if (bonusTag.IsValid && bonusAmount > 0f)
+					o["bonusCrop"] = new JObject { ["tag"] = bonusTag.ToString(), ["amount"] = bonusAmount };
+				if (m.requiredPrefabIDs.Count > 0)
+					o["onlyFor"] = new JArray(m.requiredPrefabIDs);
+				if (m.restrictedPrefabIDs.Count > 0)
+					o["notFor"] = new JArray(m.restrictedPrefabIDs);
 				arr.Add(o);
 			}
 			return arr;

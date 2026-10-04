@@ -18,7 +18,10 @@ const router = useRouter()
 const store = useColonyStore()
 // The graph carries the critters' egg rates, which depend on their happiness, so it follows the colony.
 const graph = computed(() =>
-  buildGraph(gameData, { happiness: (id) => store.happiness[id] ?? DEFAULT_HAPPINESS }),
+  buildGraph(gameData, {
+    happiness: (id) => store.happiness[id] ?? DEFAULT_HAPPINESS,
+    mutation: (id) => store.mutations[id],
+  }),
 )
 
 const target = computed<string | null>(

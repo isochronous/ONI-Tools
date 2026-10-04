@@ -1,12 +1,26 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { gameData } from '../data/load'
-import { DEFAULT_HAPPINESS } from '../model/graph'
+import { DEFAULT_HAPPINESS, mutationFits } from '../model/graph'
 import { randomGeyserSlots } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
 
 const store = useColonyStore()
 const showCritters = ref(false)
+const showPlants = ref(false)
+
+/** Plants that bear a crop under the chosen DLCs, with the mutations the game allows each. */
+const plants = computed(() =>
+  gameData.plants
+    .filter((p) => p.crop && !p.dlc.requires.some((id) => !store.dlcs.has(id)))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      mutations: (gameData.plantMutations ?? []).filter((m) => mutationFits(m, p.id)),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name)),
+)
+const mutatedCount = computed(() => Object.keys(store.mutations).length)
 
 /** Adult critters under the chosen DLCs; babies are covered by their adult. */
 const critters = computed(() =>
@@ -120,6 +134,38 @@ function has(id: string) {
       </label>
     </div>
 
+    <div v-if="gameData.plantMutations?.length" class="group">
+      <p class="eyebrow row">
+        Plants
+        <button type="button" class="link" @click="showPlants = !showPlants">
+          {{ showPlants ? 'Done' : 'Choose' }}
+        </button>
+      </p>
+      <p class="hint">
+        <template v-if="mutatedCount">{{ mutatedCount }} with a mutated seed.</template>
+        <template v-else>Plain seeds throughout.</template>
+      </p>
+      <template v-if="showPlants">
+        <p class="hint">
+          A mutated seed changes the plant's yield, growth time, and water or fertilizer use, and
+          needs radiation to stay viable. Pick the mutation you are growing, if any.
+        </p>
+        <div class="list">
+          <div v-for="p in plants" :key="p.id" class="plant">
+            <span>{{ p.name }}</span>
+            <select
+              :value="store.mutations[p.id] ?? ''"
+              :aria-label="`${p.name} mutation`"
+              @change="store.setMutation(p.id, ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">Plain</option>
+              <option v-for="m in p.mutations" :key="m.id" :value="m.id">{{ m.name }}</option>
+            </select>
+          </div>
+        </div>
+      </template>
+    </div>
+
     <div class="group">
       <p class="eyebrow row">
         Critters
@@ -213,6 +259,18 @@ h2 {
 }
 .geysers .chip {
   margin: 0.15rem 0.2rem 0.15rem 0;
+}
+.plant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9rem;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.15rem 0;
+}
+.plant select {
+  width: 100%;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.875rem;
 }
 .critter {
   display: grid;
