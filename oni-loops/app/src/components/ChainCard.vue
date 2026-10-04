@@ -6,7 +6,7 @@ import { fmt, stepLabel } from '../model/graph'
 import { nodesOf, type Chain } from '../model/chains'
 import { TIER_LABEL, type Tiers } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
-import ChainTree from './ChainTree.vue'
+import ChainSteps from './ChainSteps.vue'
 
 const props = defineProps<{ chain: Chain; target: string; tiers: Tiers; perCycle: number }>()
 const store = useColonyStore()
@@ -86,9 +86,7 @@ const costText = computed(() => {
       </p>
     </header>
 
-    <ul class="tree">
-      <ChainTree :node="chain.root" :rate="perCycle" :tiers="tiers" root />
-    </ul>
+    <ChainSteps :root="chain.root" :rate="perCycle" :tiers="tiers" />
 
     <p v-if="chain.needs.length || chain.makes.length" class="foot">
       Each cycle, for {{ fmt(perCycle) }}{{ unitOf(target) }} of {{ label(target) }}:
@@ -158,13 +156,6 @@ const costText = computed(() => {
 }
 .capped strong {
   font-weight: 600;
-}
-
-/* The chain as a tree: the target at the top, what makes it beneath, what that takes beneath that. */
-.tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
 }
 
 .foot {

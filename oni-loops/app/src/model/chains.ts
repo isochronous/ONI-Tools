@@ -131,6 +131,20 @@ interface ShapeInput {
   tier: Tier
 }
 
+/**
+ * True when `output` is a minor share of what the process puts out by mass (the Polymer
+ * Press's wisp of steam, the Water Sieve's polluted dirt): the step is run for something
+ * else, and this is what comes off the side.
+ */
+const MINOR_SHARE = 0.25
+function minorOutput(graph: Graph, p: Process, output: string): boolean {
+  const mass = p.outputs.filter((f) => graph.elements.has(f.tag))
+  if (!graph.elements.has(output) || mass.length < 2) return false
+  const total = mass.reduce((sum, f) => sum + f.amount, 0)
+  const own = mass.find((f) => f.tag === output)?.amount ?? 0
+  return total > 0 && own / total < MINOR_SHARE
+}
+
 function worse(a: Tier, b: Tier): Tier {
   return TIER_ORDER[a] >= TIER_ORDER[b] ? a : b
 }
@@ -190,7 +204,7 @@ export function findChains(
     let size = 1
     let feedback = 0
     let impractical = p.extremeTemperature === true
-    let incidental = p.incidental === true
+    let incidental = p.incidental === true || minorOutput(graph, p, output)
     for (const i of inputs) {
       tier = worse(tier, i.tier)
       if (i.shape) {
@@ -260,10 +274,14 @@ export function findChains(
       if (isAvailable(p, colony)) continue
       const shape = expand(p, tag, depth)
       if (!shape) continue
+      // Ways that take the same inputs in the same proportions are one way with alternatives
+      // (a Steam Turbine, or steam cooled in-world); a different ratio is a different way.
+      const out = p.outputs.find((f) => f.tag === tag)!
       const key = [
-        p.kind === 'transition' ? 'transition' : 'process',
         shape.tier,
-        ...shape.inputs.map((i) => i.tag).sort(),
+        ...shape.inputs
+          .map((i) => `${i.tag}:${(i.flow.amount / out.amount).toPrecision(4)}`)
+          .sort(),
       ].join('|')
       const existing = groups.get(key)
       if (!existing) groups.set(key, shape)
