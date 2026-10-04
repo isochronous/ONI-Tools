@@ -157,17 +157,16 @@ function pathTag(graph: Graph, s: Step, next: Step): string {
 }
 
 /**
- * Of two loops over the same resources, the one to show. Fewer steps that drop their product
- * in the world win first (a Lavatory pipes its polluted water out, a Wall Toilet does not, and
- * a pipe is what a loop is built from); then higher return wins; on a tie the one
- * with fewer in-world phase changes, so a Kiln is the headline and "or heated in-world" the
- * alternative when both convert at the same rate; then the one needing fewer DLCs, so the
- * Lavatory is the headline and the Wall Toilet (Spaced Out) the alternative.
+ * Of two loops over the same resources, the one to show. Higher return wins. On a real tie,
+ * fewer steps that drop their product in the world (a Lavatory pipes its polluted water out,
+ * an Outhouse does not, and a pipe is what a loop is built from); then fewer in-world phase
+ * changes, so a Kiln is the headline and "or heated in-world" the alternative when both
+ * convert at the same rate; then fewer required DLCs.
  */
 function preferred(a: Loop, b: Loop): Loop {
+  if (Math.abs(a.ratio - b.ratio) > 1e-9) return a.ratio > b.ratio ? a : b
   const unpiped = (l: Loop) => l.steps.filter((s) => s.process.pipedOutput === false).length
   if (unpiped(a) !== unpiped(b)) return unpiped(b) < unpiped(a) ? b : a
-  if (Math.abs(a.ratio - b.ratio) > 1e-9) return a.ratio > b.ratio ? a : b
   const transitions = (l: Loop) => l.steps.filter((s) => s.process.kind === 'transition').length
   if (transitions(a) !== transitions(b)) return transitions(b) < transitions(a) ? b : a
   const dlcs = (l: Loop) => l.steps.reduce((n, s) => n + s.process.dlc.requires.length, 0)
