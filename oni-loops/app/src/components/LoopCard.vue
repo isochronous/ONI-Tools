@@ -23,13 +23,14 @@ function needsOf(s: Step): string[] {
   <article class="loop" :class="{ positive }">
     <header>
       <span class="ratio">×{{ fmt(loop.ratio) }}</span>
-      <span class="tier">{{ positive ? 'net-positive loop' : 'top-up loop' }}</span>
+      <span class="tier">{{ positive ? 'net-positive loop' : loop.topUp ? 'closes with a top-up' : 'top-up loop' }}</span>
       <span v-if="!loop.primary" class="side" :title="`At one step ${label(target)}'s share of what the machine eats is only ${fmt(loop.minShare * 100)}%; the rest is the real cost.`">side-stream</span>
-      <span v-if="!positive" class="shortfall">returns {{ fmt(loop.ratio) }} per 1 {{ label(target) }}; top up {{ fmt(1 - loop.ratio) }} elsewhere</span>
+      <span v-if="!positive && loop.topUp" class="shortfall">returns {{ fmt(loop.ratio) }} per 1 {{ label(target) }} on its own; feed {{ fmt(loop.topUp.amount) }} extra {{ label(loop.topUp.tag) }} ({{ TIER_LABEL[loop.topUp.tier] }}) per {{ label(target) }} into step {{ loop.topUp.step + 1 }} and it returns 1</span>
+      <span v-else-if="!positive" class="shortfall">returns {{ fmt(loop.ratio) }} per 1 {{ label(target) }}; top up {{ fmt(1 - loop.ratio) }} elsewhere</span>
     </header>
     <ol class="chain">
       <li v-for="(s, i) in loop.steps" :key="i">
-        <span class="from">{{ i === 0 ? '1' : fmt(loop.steps.slice(0, i).reduce((r, x) => r * x.ratio, 1)) }} {{ label(s.from) }}</span>
+        <span class="from">{{ i === 0 ? '1' : fmt(loop.steps.slice(0, i).reduce((r, x) => r * x.ratio, 1)) }} {{ label(s.from) }}<small v-if="loop.topUp && loop.topUp.step === i" class="topup">+ {{ fmt(loop.topUp.amount) }} top-up</small></span>
         <span class="arrow">→</span>
         <span class="how">
           {{ how(s) }}
@@ -157,5 +158,10 @@ footer p {
   display: block;
   font-size: 0.75rem;
   color: var(--muted);
+}
+.topup {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--good);
 }
 </style>

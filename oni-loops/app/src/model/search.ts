@@ -60,7 +60,23 @@ export interface Loop {
   minShare: number
   /** The hardest-to-get external input's tier; 'renewable' when there are none. */
   worstTier: Tier
-  /** Other processes that do the same step (another fabricator, another kiln). */
+  /**
+   * For a loop that returns less than 1: an intermediate the colony can supply from outside
+   * (renewable, or finite on the asteroid) so the chain can be run harder and return exactly 1.
+   * `amount` is the extra per unit of target, fed to step `step`. When set, `externals` and
+   * `byproducts` describe the loop run that way.
+   */
+  topUp?: { tag: string; amount: number; tier: Tier; step: number }
+}
+
+/** What the loop returns per unit of target once any top-up is applied. */
+export function effectiveRatio(loop: Loop): number {
+  return loop.topUp ? 1 : loop.ratio
+}
+
+/** Net-positive, or closable to exactly 1 with a cheap top-up of an intermediate. */
+export function isClosed(loop: Loop): boolean {
+  return isPositive(loop) || loop.topUp !== undefined
 }
 
 export interface Answer {
@@ -152,7 +168,7 @@ export function findLoops(graph: Graph, target: string, colony: Colony, tiers: T
           const key = [...steps, step].map((s) => s.process.id).join('>')
           if (seen.has(key)) continue
           seen.add(key)
-          const loop = summarise(graph, [...steps, step], ratio * r, target, colony, tiers)
+          const loop = closeWithTopUp(graph, summarise(graph, [...steps, step], ratio * r, target, colony, tiers), target, colony, tiers)
           // Primary and side-stream variants of one path are different answers (a Lavatory plus a
           // Steam Turbine vs steam riding through a refinery), and so are variants whose extra
           // inputs sit on different tiers, so those never fold together.
@@ -198,6 +214,7 @@ export function compareLoops(a: Loop, b: Loop): number {
   return (
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
     Number(isPositive(b)) - Number(isPositive(a)) ||
+    Number(isClosed(b)) - Number(isClosed(a)) ||
     Number(b.primary) - Number(a.primary) ||
     b.ratio - a.ratio ||
     a.steps.length - b.steps.length
@@ -214,11 +231,40 @@ export function isPositive(loop: Loop): boolean {
  * chain: what the chain consumes but never makes is an external input; what it makes but
  * never consumes (other than the target) is a byproduct.
  */
-function summarise(graph: Graph, steps: Step[], ratio: number, target: string, colony: Colony, tiers: Tiers): Loop {
+/**
+ * A loop short of 1 is not necessarily limited: if an intermediate is something the colony
+ * can add from outside (polluted water from a geyser), the steps after it can be run harder
+ * until the loop returns exactly 1. The best-placed such intermediate (by tier, then an element
+ * over an item, then the earliest) becomes the loop's top-up, and the flows are recomputed for
+ * that run.
+ */
+function closeWithTopUp(graph: Graph, loop: Loop, target: string, colony: Colony, tiers: Tiers): Loop {
+  if (loop.ratio >= 1 || loop.ratio <= 0 || loop.steps.length < 2) return loop
+  const scale = 1 / loop.ratio
+  let best: Loop['topUp'] | undefined
+  let before = 1
+  for (let i = 0; i < loop.steps.length - 1; i++) {
+    before *= loop.steps[i]!.ratio
+    const tag = loop.steps[i]!.to
+    const tier = tiers.of(tag)
+    if (tag === target || TIER_ORDER[tier] > TIER_ORDER.local) continue
+    const amount = before * (scale - 1)
+    // Prefer a bulk element (polluted water) over an item (figs), then the earliest point in
+    // the chain, so the whole chain downstream is what gets run harder.
+    const better = !best || TIER_ORDER[tier] < TIER_ORDER[best.tier] || (tier === best.tier && graph.elements.has(tag) && !graph.elements.has(best.tag))
+    if (better) best = { tag, amount, tier, step: i + 1 }
+  }
+  if (!best) return loop
+  const closed = summarise(graph, loop.steps, loop.ratio, target, colony, tiers, { from: best.step, scale })
+  return { ...loop, externals: closed.externals, byproducts: closed.byproducts, worstTier: closed.worstTier, topUp: best }
+}
+
+function summarise(graph: Graph, steps: Step[], ratio: number, target: string, colony: Colony, tiers: Tiers, boost?: { from: number; scale: number }): Loop {
   const net = new Map<string, number>()
   let carried = 1 // units of the current step's `from` per unit of target
   let minShare = 1
-  for (const s of steps) {
+  for (const [i, s] of steps.entries()) {
+    if (boost && i === boost.from) carried *= boost.scale // run the rest of the chain harder on the top-up
     const input = inputFor(s.process, s.from)
     const runs = input && input.amount > 0 ? carried / input.amount : 0
     // An any-of input is consumed as whatever the chain arrived with.
@@ -261,6 +307,6 @@ export function answer(graph: Graph, target: string, colony: Colony, tiers: Tier
   const order: Record<string, number> = { recipe: 0, converter: 1, diet: 2, crop: 3, shear: 4, egg: 5, grow: 6, drop: 7, seed: 8, 'harvest-bonus': 9, transition: 10, sublimate: 11, rot: 11, geyser: 12, worldgen: 13, starmap: 14 }
   producers.sort((a, b) => (order[a.kind] ?? 99) - (order[b.kind] ?? 99) || a.via.localeCompare(b.via))
   const cycles = findLoops(graph, target, colony, tiers, 6, 200)
-  const loops = cycles.filter((l) => l.ratio >= colony.loopFloor)
+  const loops = cycles.filter((l) => effectiveRatio(l) >= colony.loopFloor)
   return { target, loops, hiddenCycles: cycles.length - loops.length, producers, locked }
 }
