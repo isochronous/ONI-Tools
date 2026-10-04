@@ -357,6 +357,9 @@ export function findChains(
   const seen = new Set<string>()
   for (const shape of ways(target, 0).flatMap(variants)) {
     if (shape.feedback >= 1 - 1e-9) continue // feeds itself everything it makes
+    // A step run for something else, with the target coming off the side (a Polymer Press's
+    // wisp of steam), is not a way to make it at any rate: the ratio never changes.
+    if (shape.incidental) continue
     // "Dig it up" is not a way to make something; the tier line already says it is in the terrain.
     if (shape.process.kind === 'worldgen') continue
     const sig = signature(shape)
@@ -464,8 +467,7 @@ export function nodesOf(chain: Chain): Node[] {
 }
 
 /**
- * Routes needing extreme in-world temperatures last of all, then routes that only pick up
- * what a building gives off while doing something else; otherwise easiest leaves first
+ * Routes needing extreme in-world temperatures last of all; otherwise easiest leaves first
  * (a chain fed by geysers beats one needing a rocket), then chains that stay within what a
  * colony would build at the asked rate (fifty plants, thirty critters, ten buildings), then chains the
  * colony's Duplicants can run at the asked rate, then those that feed on their own product
@@ -474,7 +476,6 @@ export function nodesOf(chain: Chain): Node[] {
 export function compareChains(a: Chain, b: Chain): number {
   return (
     Number(a.impractical) - Number(b.impractical) ||
-    Number(a.incidental) - Number(b.incidental) ||
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
     Number(a.capped ?? false) - Number(b.capped ?? false) ||
     Number(a.strain > 1) - Number(b.strain > 1) ||

@@ -79,10 +79,6 @@ const costText = computed(() => {
           </template>
         </span>
       </p>
-      <p v-if="chain.incidental" class="capped">
-        A step here only picks up what a building gives off while it works on something else, so it
-        runs as often as that building does.
-      </p>
       <p v-if="chain.impractical" class="capped">
         A step here needs an in-world temperature past 500 °C or below −50 °C: a volcano, a magma
         pool, or serious engineering.
