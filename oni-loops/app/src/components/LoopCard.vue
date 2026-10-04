@@ -219,9 +219,9 @@ function needs(extras: string[] | undefined): string {
             ' ' + needs(s.process.needs.extras)
           }}</template
           ><template v-if="s.alternatives?.length"
-            ><span class="alt" :title="s.alternatives.join(', ')">{{
-              ' Or ' + alternatives(s.alternatives) + '.'
-            }}</span></template
+            ><span class="alt" :title="s.alternatives.join(', ')"
+              >Or {{ alternatives(s.alternatives) }}.</span
+            ></template
           >
         </p>
       </li>
@@ -440,8 +440,10 @@ function needs(extras: string[] | undefined): string {
   text-decoration: underline dotted var(--warn);
   text-underline-offset: 0.15em;
 }
+/* Another way to do the same step, on its own line and in the same colour as the step itself. */
 .alt {
-  color: var(--faint);
+  display: block;
+  color: var(--accent);
 }
 
 .foot {
