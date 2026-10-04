@@ -157,14 +157,28 @@ function pathTag(graph: Graph, s: Step, next: Step): string {
 }
 
 /**
- * Of two loops over the same resources, the one to show. Higher return wins; on a tie the one
+ * Buildings that step aside as the headline even when they convert better: the Wall Toilet
+ * is the Lavatory's space-saving variant (2.5 kg of water in, 9.2 kg out, against 5 and 11.7),
+ * but the Lavatory is what colonies are built around, so it leads and the Wall Toilet is the
+ * "or" alternative.
+ */
+const YIELDS_HEADLINE = new Set(['WallToilet'])
+
+/**
+ * Of two loops over the same resources, the one to show. A loop using a building that yields
+ * the headline loses to one without; otherwise higher return wins; on a tie the one
  * with fewer in-world phase changes, so a Kiln is the headline and "or heated in-world" the
- * alternative when both convert at the same rate.
+ * alternative when both convert at the same rate; then the one needing fewer DLCs, so the
+ * Lavatory is the headline and the Wall Toilet (Spaced Out) the alternative.
  */
 function preferred(a: Loop, b: Loop): Loop {
+  const yielding = (l: Loop) => l.steps.filter((s) => YIELDS_HEADLINE.has(s.process.viaId)).length
+  if (yielding(a) !== yielding(b)) return yielding(b) < yielding(a) ? b : a
   if (Math.abs(a.ratio - b.ratio) > 1e-9) return a.ratio > b.ratio ? a : b
   const transitions = (l: Loop) => l.steps.filter((s) => s.process.kind === 'transition').length
-  return transitions(b) < transitions(a) ? b : a
+  if (transitions(a) !== transitions(b)) return transitions(b) < transitions(a) ? b : a
+  const dlcs = (l: Loop) => l.steps.reduce((n, s) => n + s.process.dlc.requires.length, 0)
+  return dlcs(b) < dlcs(a) ? b : a
 }
 
 /** Merges `other`'s way of doing each step into `best` as alternatives (step objects are shared, so by copy). */
