@@ -652,9 +652,10 @@ export function buildGraph(d: GameData): Graph {
       })
   }
 
-  // An element no world holds, no geyser or space rock gives, and no process makes (Pyrite,
-  // Electrum) exists only in debug mode: it is not a choice for an input, and a process that
-  // needs it can never run.
+  // An element no world holds, no geyser or space rock gives, and no process makes is not a
+  // choice for an input, and a process that needs it can never run. That covers debug-only
+  // elements (Pyrite, Radium) and Corium, which only a Research Reactor meltdown produces:
+  // nothing a colony plans around, and nothing the dump records as a conversion.
   const obtainable = new Set<string>()
   for (const w of d.worldgen) for (const el of w.elements) obtainable.add(el)
   for (const g of d.geysers) obtainable.add(g.element)
