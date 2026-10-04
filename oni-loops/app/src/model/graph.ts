@@ -271,7 +271,13 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         outputs: [{ tag: e.sublimate.id, amount: e.sublimate.efficiency || 1 }],
         dlc,
         needs: {},
-        notes: ['off-gasses when exposed'],
+        // Debris off-gasses slowly per pile, so the trick is many small piles, each under a
+        // film of liquid so none of them is ever over-pressured.
+        notes: e.sublimate.debris
+          ? [
+              'off-gasses as debris: slow per pile, so spread it over many tiles under a little liquid',
+            ]
+          : ['off-gasses when exposed'],
       })
     }
   }

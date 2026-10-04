@@ -284,6 +284,24 @@ namespace OniDataDump
 					o["lowTempOre"] = new JObject { ["id"] = e.lowTempTransitionOreID.ToString(), ["massFraction"] = e.lowTempTransitionOreMassConversion };
 				if (e.sublimateId != SimHashes.Vacuum && e.sublimateId != 0)
 					o["sublimate"] = new JObject { ["id"] = e.sublimateId.ToString(), ["rate"] = e.sublimateRate, ["efficiency"] = e.sublimateEfficiency };
+				else
+				{
+					// Some ores off-gas as debris instead (Bleach Stone's chlorine): a Sublimates component on
+					// the element's prefab, converting mass one to one at rate * mass^massPower per second,
+					// stopping when the gas around it reaches maxDestinationMass.
+					GameObject ore = Assets.TryGetPrefab(e.tag);
+					Sublimates debris = ore != null ? ore.GetComponent<Sublimates>() : null;
+					if (debris != null && debris.info.sublimatedElement != SimHashes.Vacuum)
+						o["sublimate"] = new JObject
+						{
+							["id"] = debris.info.sublimatedElement.ToString(),
+							["rate"] = debris.info.sublimationRate,
+							["efficiency"] = 1f,
+							["debris"] = true,
+							["massPower"] = debris.info.massPower,
+							["maxDestinationMass"] = debris.info.maxDestinationMass,
+						};
+				}
 				if (e.convertId != SimHashes.Vacuum && e.convertId != 0)
 					o["convertId"] = e.convertId.ToString();
 				arr.Add(o);

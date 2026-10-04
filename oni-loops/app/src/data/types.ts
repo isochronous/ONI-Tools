@@ -46,7 +46,15 @@ export interface ElementData {
   highTempTarget: string
   highTempOre?: { id: string; massFraction: number }
   lowTempOre?: { id: string; massFraction: number }
-  sublimate?: { id: string; rate: number; efficiency: number }
+  sublimate?: {
+    id: string
+    rate: number
+    efficiency: number
+    /** True when the off-gassing is from debris (a Sublimates component), not the element in a tile. */
+    debris?: boolean
+    massPower?: number
+    maxDestinationMass?: number
+  }
   convertId?: string
 }
 
