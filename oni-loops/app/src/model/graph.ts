@@ -179,7 +179,16 @@ const EXTREME_COLD_K = 223.15
 /** RotPile.States: a pile converts to Polluted Dirt once its decomposition amount reaches 600 s. */
 const ROT_PILE_SECONDS = 600
 
-export function buildGraph(d: GameData): Graph {
+/** What the player can tell the model beyond the game data. */
+export interface GraphOptions {
+  /** A tame critter's happiness, by critter id; tame and groomed is 4 (groomed +5, tame -1). */
+  happiness?: (critterId: string) => number
+}
+
+/** Happiness of a tame, groomed critter: the +5 of grooming less the -1 of being tame. */
+export const DEFAULT_HAPPINESS = 4
+
+export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
   const processes: Process[] = []
   const elementIds = new Set(d.elements.filter((e) => !e.disabled).map((e) => e.id))
   const itemIds = new Set(d.items.map((it) => it.id))
@@ -471,16 +480,41 @@ export function buildGraph(d: GameData): Graph {
       })
     }
     if (c.egg && c.cyclesPerEgg) {
+      // Normal ranching: a tame, fed adult lays an egg every so many cycles, faster the happier
+      // it is, so an egg costs what the adult eats in that time. The diet with the most foods
+      // stands for its menu.
+      const happiness = options.happiness?.(c.id) ?? DEFAULT_HAPPINESS
+      const cyclesPerEgg =
+        c.cyclesPerEgg / (1 + (d.tuning.fertilityPerHappiness ?? 2.25) * Math.max(0, happiness))
+      const diet = (c.diet ?? [])
+        .filter((x) => x.caloriesPerKg > 0 && x.eats.length)
+        .sort((a, b) => b.eats.length - a.eats.length)[0]
+      const eats =
+        diet && c.caloriesBurnedPerCycle
+          ? (c.caloriesBurnedPerCycle * cyclesPerEgg) / diet.caloriesPerKg
+          : 0
+      const inputs: Flow[] =
+        eats > 0 && diet
+          ? [
+              {
+                tag: diet.eats[0]!,
+                amount: eats,
+                anyOf: diet.eats.length > 1 ? diet.eats : undefined,
+              },
+            ]
+          : []
       add({
         kind: 'egg',
         via: c.name,
         viaId: c.id,
-        inputs: [],
+        inputs,
         outputs: [{ tag: c.egg, amount: 1 }],
         dlc: c.dlc,
         needs: { critter: c.id },
-        throughput: { runsPerCycle: 1 / c.cyclesPerEgg, instance: 'critter' },
-        notes: [`one every ${fmt(c.cyclesPerEgg)} cycles when tame and fed`],
+        throughput: { runsPerCycle: 1 / cyclesPerEgg, instance: 'critter' },
+        notes: [
+          `one every ${fmt(cyclesPerEgg)} cycles when tame and fed, at happiness ${fmt(happiness)}`,
+        ],
         wildFactor: d.tuning.wildCritterGrowthModifier,
       })
     }
@@ -509,7 +543,14 @@ export function buildGraph(d: GameData): Graph {
         dlc: c.dlc,
         needs: { critter: c.id },
         throughput: parent?.cyclesPerEgg
-          ? { runsPerCycle: 1 / parent.cyclesPerEgg, instance: 'critter' }
+          ? {
+              runsPerCycle:
+                (1 +
+                  (d.tuning.fertilityPerHappiness ?? 2.25) *
+                    Math.max(0, options.happiness?.(parent.id) ?? DEFAULT_HAPPINESS)) /
+                parent.cyclesPerEgg,
+              instance: 'critter',
+            }
           : undefined,
         notes: ['when it grows up'],
       })

@@ -41,6 +41,9 @@ namespace OniDataDump
 					// A Duplicant's bladder fills at this rate out of 100, so 1/6 per second is one
 					// toilet visit per cycle. Showers are taken about as often.
 					["bladderPerSecond"] = TUNING.DUPLICANTSTATS.STANDARD.BaseStats.BLADDER_INCREASE_PER_SECOND,
+					// HappinessMonitor.REPRODUCTION_HAPPINESS_MULTIPLIER (private): a tame critter's egg rate
+					// is multiplied by 1 + this * happiness while happiness is positive.
+					["fertilityPerHappiness"] = 2.25f,
 					// The sim only changes phase this many kelvin past lowTemp / highTemp.
 					["stateTransitionBufferK"] = SimMessages.STATE_TRANSITION_TEMPERATURE_BUFER,
 					// A Mimika's pollination: growth bonus, how long it lasts, and the pause between plants.

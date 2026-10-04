@@ -126,6 +126,11 @@ interface Shape {
   impractical: boolean
   /** Some step in the subtree is a building's incidental output. */
   incidental: boolean
+  /**
+   * The subtree's biggest step at the asked rate, as instances over what a colony would build
+   * of that kind: a Gnit every 4.5 cycles strains a ranch less than a Puft every 45.
+   */
+  strain: number
   /** Units of target fed back per unit of this shape's output. */
   feedback: number
   alternatives: Process[]
@@ -159,20 +164,29 @@ function worse(a: Tier, b: Tier): Tier {
 
 /**
  * Of two shapes making the same thing, the one to prefer: no feedback over feedback, then the
- * easier tier, then fewer processes, then one that pipes its product out, then a building
- * over an in-world phase change (a Kiln leads, "or heated in-world" follows), then fewer DLCs.
+ * easier tier, then one a colony would build (within the allowance per unit), then fewer
+ * processes, then less scale (a Gnit every 4.5 cycles over a Puft every 45), then one that
+ * pipes its product out, then a building over an in-world phase change (a Kiln leads, "or
+ * heated in-world" follows), then fewer DLCs.
  */
 function compareShapes(a: Shape, b: Shape): number {
   return (
     Number(a.impractical) - Number(b.impractical) ||
     Number(a.incidental) - Number(b.incidental) ||
     Number(a.feedback > 0) - Number(b.feedback > 0) ||
+    Number(a.strain > 1) - Number(b.strain > 1) ||
     TIER_ORDER[a.tier] - TIER_ORDER[b.tier] ||
     a.size - b.size ||
+    strainBucket(a.strain) - strainBucket(b.strain) ||
     Number(a.process.pipedOutput === false) - Number(b.process.pipedOutput === false) ||
     Number(a.process.kind === 'transition') - Number(b.process.kind === 'transition') ||
     a.process.dlc.requires.length - b.process.dlc.requires.length
   )
+}
+
+/** Strain compared coarsely, so a route three times bigger loses but a few percent is a tie. */
+function strainBucket(strain: number): number {
+  return strain <= 0 ? -99 : Math.round(Math.log10(strain) * 2)
 }
 
 /** What a process with no inputs costs the colony: a geyser it has, its own terrain, a rocket trip, or a critter or plant. */
@@ -202,17 +216,30 @@ export function findChains(
   tiers: Tiers,
   perCycle: number,
 ): Chain[] {
+  // Memo per tag and coarse rate (powers of three), since scale depends on how much is needed.
   const memo = new Map<string, { shape: Shape | null; depth: number }>()
+  const rateKey = (tag: string, need: number) =>
+    `${tag}@${Math.round(Math.log(Math.max(need, 1e-9)) / Math.log(3))}`
   const stack = new Set<string>([target])
 
   /** A shape from its process and resolved inputs; tier, size, and feedback follow from them. */
-  function assemble(p: Process, output: string, ownTier: Tier, inputs: ShapeInput[]): Shape {
+  /** `need`: units of `output` per cycle this shape must make, which sets its scale. */
+  function assemble(
+    p: Process,
+    output: string,
+    ownTier: Tier,
+    inputs: ShapeInput[],
+    need: number,
+  ): Shape {
     const out = p.outputs.find((f) => f.tag === output)!
     let tier = ownTier
     let size = 1
     let feedback = 0
     let impractical = p.extremeTemperature === true
     let incidental = p.incidental === true || minorOutput(graph, p, output)
+    const runs = need / out.amount // process runs per cycle at this scale
+    const t = p.throughput
+    let strain = t ? runs / t.runsPerCycle / allowance(t.instance) : 0
     for (const i of inputs) {
       tier = worse(tier, i.tier)
       if (i.shape) {
@@ -220,6 +247,7 @@ export function findChains(
         feedback += (i.shape.feedback * i.flow.amount) / out.amount
         impractical ||= i.shape.impractical
         incidental ||= i.shape.incidental
+        strain = Math.max(strain, i.shape.strain)
       } else if (i.feedback) feedback += i.flow.amount / out.amount
       else if (graph.hotOnly.has(i.tag)) impractical = true // an outside supply of Molten Steel is no plan
     }
@@ -233,11 +261,12 @@ export function findChains(
       feedback,
       impractical,
       incidental,
+      strain,
       alternatives: [],
     }
   }
 
-  function expand(p: Process, output: string, depth: number): Shape | null {
+  function expand(p: Process, output: string, depth: number, need: number): Shape | null {
     const out = p.outputs.find((f) => f.tag === output)
     if (!out || out.amount <= 0) return null
     const ownTier = sourceTier(p, colony, tiers)
@@ -251,36 +280,44 @@ export function findChains(
         if (tag === target) candidate = { flow: f, tag, feedback: true, tier: 'renewable' }
         else if (stack.has(tag)) continue
         else {
-          const shape = best(tag, depth + 1)
+          const shape = best(tag, depth + 1, (f.amount * need) / out.amount)
           // An input nothing here can make is only as good as what sources give directly;
-          // crediting it with a route this chain cut would be circular.
+          // crediting it with a route this chain cut would be circular. Past the depth limit
+          // nothing was looked at, so nothing is credited.
           candidate = shape
             ? { flow: f, tag, shape, tier: shape.tier }
-            : { flow: f, tag, tier: tiers.direct(tag) }
+            : { flow: f, tag, tier: depth + 1 > MAX_DEPTH ? 'none' : tiers.direct(tag) }
         }
         if (!chosen || betterInput(candidate, chosen)) chosen = candidate
       }
       if (!chosen) return null // every option is something this chain is already making
       inputs.push(chosen)
     }
-    return assemble(p, output, ownTier, inputs)
+    return assemble(p, output, ownTier, inputs, need)
   }
 
   function betterInput(a: ShapeInput, b: ShapeInput): boolean {
     const d =
       Number(!!a.feedback) - Number(!!b.feedback) ||
+      Number((a.shape?.strain ?? 0) > 1) - Number((b.shape?.strain ?? 0) > 1) ||
       TIER_ORDER[a.tier] - TIER_ORDER[b.tier] ||
-      (a.shape?.size ?? 0) - (b.shape?.size ?? 0)
+      (a.shape?.size ?? 0) - (b.shape?.size ?? 0) ||
+      strainBucket(a.shape?.strain ?? 0) - strainBucket(b.shape?.strain ?? 0)
     return d < 0
   }
 
+  /** What a colony would build of each kind of thing for one product; Duplicants are what it has. */
+  function allowance(instance: NonNullable<Process['throughput']>['instance']): number {
+    return instance === 'duplicant' ? colony.duplicants : ALLOWANCE[instance]
+  }
+
   /** Every distinct way to make `tag`, one shape per set of inputs, best first. */
-  function ways(tag: string, depth: number): Shape[] {
+  function ways(tag: string, depth: number, need: number): Shape[] {
     if (depth > MAX_DEPTH) return []
     const groups = new Map<string, Shape>()
     for (const p of graph.byOutput.get(tag) ?? []) {
       if (isAvailable(p, colony)) continue
-      const shape = expand(p, tag, depth)
+      const shape = expand(p, tag, depth, need)
       if (!shape) continue
       // Ways that take the same inputs in the same proportions are one way with alternatives
       // (a Steam Turbine, or steam cooled in-world); a different ratio is a different way.
@@ -306,14 +343,15 @@ export function findChains(
   }
 
   /** The best way to make `tag`, remembered; null when nothing the colony can run makes it. */
-  function best(tag: string, depth: number): Shape | null {
+  function best(tag: string, depth: number, need: number): Shape | null {
     // A result found with more depth to spare is at least as complete as one found with less.
-    const hit = memo.get(tag)
+    const key = rateKey(tag, need)
+    const hit = memo.get(key)
     if (hit && hit.depth <= depth) return hit.shape
     stack.add(tag)
-    const found = ways(tag, depth)[0] ?? null
+    const found = ways(tag, depth, need)[0] ?? null
     stack.delete(tag)
-    memo.set(tag, { shape: found, depth })
+    memo.set(key, { shape: found, depth })
     return found
   }
 
@@ -337,7 +375,8 @@ export function findChains(
     shape.inputs.forEach((input, index) => {
       if (!input.shape) return
       stack.add(input.tag)
-      const others = ways(input.tag, 1).slice(0, 3)
+      const made = shape.process.outputs.find((f) => f.tag === shape.output)!
+      const others = ways(input.tag, 1, (input.flow.amount * perCycle) / made.amount).slice(0, 3)
       stack.delete(input.tag)
       for (const alt of others) {
         if (signature(alt) === signature(input.shape)) continue
@@ -345,7 +384,7 @@ export function findChains(
           k === index ? { flow: i.flow, tag: i.tag, shape: alt, tier: alt.tier } : i,
         )
         out.push({
-          ...assemble(shape.process, shape.output, shape.ownTier, inputs),
+          ...assemble(shape.process, shape.output, shape.ownTier, inputs, perCycle),
           alternatives: shape.alternatives,
         })
       }
@@ -355,7 +394,7 @@ export function findChains(
 
   const chains: Chain[] = []
   const seen = new Set<string>()
-  for (const shape of ways(target, 0).flatMap(variants)) {
+  for (const shape of ways(target, 0, perCycle).flatMap(variants)) {
     if (shape.feedback >= 1 - 1e-9) continue // feeds itself everything it makes
     // A step run for something else, with the target coming off the side (a Polymer Press's
     // wisp of steam), is not a way to make it at any rate: the ratio never changes.
@@ -467,18 +506,18 @@ export function nodesOf(chain: Chain): Node[] {
 }
 
 /**
- * Routes needing extreme in-world temperatures last of all; otherwise easiest leaves first
- * (a chain fed by geysers beats one needing a rocket), then chains that stay within what a
- * colony would build at the asked rate (fifty plants, thirty critters, ten buildings), then chains the
+ * Routes needing extreme in-world temperatures last of all, then routes a colony would not
+ * build at the asked rate (over fifty plants, thirty critters, or ten buildings at one step);
+ * otherwise easiest leaves first (a chain fed by geysers beats one needing a rocket), then chains the
  * colony's Duplicants can run at the asked rate, then those that feed on their own product
  * less, then shorter, then needing less from outside.
  */
 export function compareChains(a: Chain, b: Chain): number {
   return (
     Number(a.impractical) - Number(b.impractical) ||
+    Number(a.strain > 1) - Number(b.strain > 1) ||
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
     Number(a.capped ?? false) - Number(b.capped ?? false) ||
-    Number(a.strain > 1) - Number(b.strain > 1) ||
     Number(a.feedback > 0) - Number(b.feedback > 0) ||
     a.size - b.size ||
     cost(a) - cost(b)

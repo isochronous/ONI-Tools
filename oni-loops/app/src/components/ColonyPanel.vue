@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { gameData } from '../data/load'
+import { DEFAULT_HAPPINESS } from '../model/graph'
 import { randomGeyserSlots } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
 
@@ -11,9 +12,13 @@ const showCritters = ref(false)
 const critters = computed(() =>
   gameData.critters
     .filter((c) => !c.adult && !c.dlc.requires.some((id) => !store.dlcs.has(id)))
-    .map((c) => ({ id: c.id, name: c.name }))
+    .map((c) => ({ id: c.id, name: c.name, laysEggs: !!c.egg && !!c.cyclesPerEgg }))
     .sort((a, b) => a.name.localeCompare(b.name)),
 )
+
+function happinessOf(id: string): number {
+  return store.happiness[id] ?? DEFAULT_HAPPINESS
+}
 const allIds = computed(() => critters.value.map((c) => c.id))
 
 /** Clusters playable with the chosen DLCs. */
@@ -132,16 +137,38 @@ function has(id: string) {
         {{ store.critters.size }} of {{ critters.length }} available.
         <button type="button" class="link" @click="store.assumeAllCritters()">Assume all</button>
       </p>
-      <div v-if="showCritters" class="list">
-        <label v-for="c in critters" :key="c.id" class="check">
-          <input
-            type="checkbox"
-            :checked="has(c.id)"
-            @change="store.setCritter(c.id, ($event.target as HTMLInputElement).checked, allIds)"
-          />
-          {{ c.name }}
-        </label>
-      </div>
+      <template v-if="showCritters">
+        <p class="hint">
+          Happiness sets how fast a tame critter lays eggs: 1 + 2.25 × happiness times the base
+          rate. Tame is −1, groomed +5, cramped −5, so a groomed critter in a proper stable is 4.
+        </p>
+        <div class="list">
+          <div v-for="c in critters" :key="c.id" class="critter">
+            <label class="check">
+              <input
+                type="checkbox"
+                :checked="has(c.id)"
+                @change="
+                  store.setCritter(c.id, ($event.target as HTMLInputElement).checked, allIds)
+                "
+              />
+              {{ c.name }}
+            </label>
+            <input
+              v-if="c.laysEggs"
+              type="number"
+              class="num happiness"
+              min="-10"
+              max="10"
+              step="1"
+              :value="happinessOf(c.id)"
+              :aria-label="`${c.name} happiness`"
+              title="Happiness"
+              @change="store.setHappiness(c.id, Number(($event.target as HTMLInputElement).value))"
+            />
+          </div>
+        </div>
+      </template>
     </div>
   </section>
 </template>
@@ -186,6 +213,20 @@ h2 {
 }
 .geysers .chip {
   margin: 0.15rem 0.2rem 0.15rem 0;
+}
+.critter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.5rem;
+  gap: 0.5rem;
+  align-items: center;
+}
+.happiness {
+  width: 100%;
+  padding: 0.15rem 0.35rem;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: 0.875rem;
 }
 .list {
   max-height: 18rem;

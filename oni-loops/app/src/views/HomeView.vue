@@ -7,17 +7,19 @@ import FilterBar from '../components/FilterBar.vue'
 import ProcessList from '../components/ProcessList.vue'
 import TargetPicker from '../components/TargetPicker.vue'
 import { gameData, label } from '../data/load'
-import { useGraph } from '../model'
 import { answer, nodesOf, type Chain } from '../model/chains'
 import { chainKeys, facetsOf, passes, processKeys } from '../model/filters'
-import { fmt } from '../model/graph'
+import { buildGraph, DEFAULT_HAPPINESS, fmt } from '../model/graph'
 import { computeTiers, TIER_LABEL } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
 
 const route = useRoute()
 const router = useRouter()
 const store = useColonyStore()
-const graph = useGraph()
+// The graph carries the critters' egg rates, which depend on their happiness, so it follows the colony.
+const graph = computed(() =>
+  buildGraph(gameData, { happiness: (id) => store.happiness[id] ?? DEFAULT_HAPPINESS }),
+)
 
 const target = computed<string | null>(
   () => (typeof route.query.t === 'string' && route.query.t) || null,
@@ -36,7 +38,7 @@ watch(
 )
 
 /** Elements are wanted in kilograms per cycle, items in pieces; each remembers its own figure. */
-const targetIsElement = computed(() => !!target.value && graph.elements.has(target.value))
+const targetIsElement = computed(() => !!target.value && graph.value.elements.has(target.value))
 const perCycle = computed({
   get: () => (targetIsElement.value ? store.demandKg : store.demandItems),
   set: (v: number) => {
@@ -48,21 +50,25 @@ const perCycle = computed({
 
 // What the colony has, and how much it wants, decide the answer; the filters only hide parts of it.
 const tiers = computed(() =>
-  computeTiers(gameData, graph, store.colony, store.clusterData, store.geysers),
+  computeTiers(gameData, graph.value, store.colony, store.clusterData, store.geysers),
 )
 const result = computed(() =>
-  target.value ? answer(graph, target.value, store.colony, tiers.value, perCycle.value) : null,
+  target.value
+    ? answer(graph.value, target.value, store.colony, tiers.value, perCycle.value)
+    : null,
 )
-const facets = computed(() => (result.value ? facetsOf(graph, result.value) : []))
+const facets = computed(() => (result.value ? facetsOf(graph.value, result.value) : []))
 
 const shownChains = computed(() =>
-  result.value ? result.value.chains.filter((c) => passes(chainKeys(graph, c), store.hidden)) : [],
+  result.value
+    ? result.value.chains.filter((c) => passes(chainKeys(graph.value, c), store.hidden))
+    : [],
 )
 const filteredChains = computed(() => (result.value?.chains.length ?? 0) - shownChains.value.length)
 const shownLocked = computed(() =>
   result.value
     ? result.value.locked.filter((l) =>
-        passes(processKeys(graph, l.process, result.value!.target), store.hidden),
+        passes(processKeys(graph.value, l.process, result.value!.target), store.hidden),
       )
     : [],
 )

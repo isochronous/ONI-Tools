@@ -21,6 +21,8 @@ interface Saved {
   demandItems: number
   /** Filter keys ("machine:Kiln") the player has switched off. */
   hidden: string[]
+  /** Tame critter happiness by critter id, where it differs from the groomed default. */
+  happiness: Record<string, number>
 }
 
 function load(): Partial<Saved> | null {
@@ -58,6 +60,7 @@ export const useColonyStore = defineStore('colony', () => {
   const demandKg = ref(saved?.demandKg ?? 100)
   const demandItems = ref(saved?.demandItems ?? 10)
   const hidden = ref(new Set(saved?.hidden ?? []))
+  const happiness = ref<Record<string, number>>({ ...(saved?.happiness ?? {}) })
 
   const clusterData = computed(() => gameData.clusters.find((c) => c.id === cluster.value) ?? null)
   /** Guaranteed by the cluster's worldgen rules, keyed by geyser type. */
@@ -84,6 +87,7 @@ export const useColonyStore = defineStore('colony', () => {
         demandKg: demandKg.value,
         demandItems: demandItems.value,
         hidden: [...hidden.value],
+        happiness: happiness.value,
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     } catch {
@@ -118,6 +122,10 @@ export const useColonyStore = defineStore('colony', () => {
     critters.value = null
   }
 
+  function setHappiness(id: string, value: number) {
+    happiness.value = { ...happiness.value, [id]: Math.max(-10, Math.min(10, Number(value) || 0)) }
+  }
+
   function toggleHidden(key: string) {
     hidden.value = toggled(hidden.value, key)
   }
@@ -135,7 +143,7 @@ export const useColonyStore = defineStore('colony', () => {
     hidden.value = new Set()
   }
 
-  watch([colony, hidden, demandKg, demandItems], save, { deep: true })
+  watch([colony, hidden, demandKg, demandItems, happiness], save, { deep: true })
 
   return {
     dlcs,
@@ -149,12 +157,14 @@ export const useColonyStore = defineStore('colony', () => {
     extraGeysers,
     geysers,
     hidden,
+    happiness,
     colony,
     toggleDlc,
     setCritter,
     assumeAllCritters,
     toggleGeyser,
     toggleHidden,
+    setHappiness,
     setHidden,
     clearHidden,
   }

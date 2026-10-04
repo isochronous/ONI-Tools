@@ -20,6 +20,8 @@ export interface GameInfo {
 export interface Tuning {
   /** How fast a Duplicant's bladder fills, out of 100 (1/6 per second: one toilet visit a cycle). */
   bladderPerSecond?: number
+  /** A tame critter lays eggs (1 + this × happiness) times faster while happiness is positive. */
+  fertilityPerHappiness?: number
   wildPlantGrowthModifier: number
   wildCritterCalorieBurnRatio: number
   wildCritterGrowthModifier: number
