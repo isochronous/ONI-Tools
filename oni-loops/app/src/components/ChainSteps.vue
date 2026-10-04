@@ -190,11 +190,12 @@ function doer(n: Node): string | undefined {
                 stepLabel(row.node.process)
               }}</span
             ><span v-if="countText(row.node)" class="count"> ({{ countText(row.node) }})</span
-            ><template v-if="gathered(row.node)">
-              takes {{ gathered(row.node) }} from above</template
-            ><template v-if="outside(row.node).length">
-              {{ gathered(row.node) ? 'plus' : 'with' }}
-              <template v-for="(i, k) in outside(row.node)" :key="i.tag"
+            ><template v-if="gathered(row.node)">{{
+              ' takes ' + gathered(row.node) + ' from above'
+            }}</template
+            ><template v-if="outside(row.node).length"
+              >{{ gathered(row.node) ? ' plus ' : ' with '
+              }}<template v-for="(i, k) in outside(row.node)" :key="i.tag"
                 ><template v-if="k > 0">{{
                   k === outside(row.node).length - 1 ? ' and ' : ', '
                 }}</template
