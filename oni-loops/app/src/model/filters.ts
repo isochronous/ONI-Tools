@@ -40,10 +40,9 @@ function key(group: FacetGroup, id: string): string {
   return `${group}:${id}`
 }
 
-/** Eggs and critters follow from which critters the colony can ranch, which the Critters group already covers. */
+/** Eggs follow from which critters are in play, so they are no filter of their own; critters stay, so a chain that uses one can be hidden without changing the colony. */
 function isMaterialFacet(graph: Graph, tag: string): boolean {
-  const kind = graph.kinds.get(tag)
-  return kind !== 'egg' && kind !== 'critter'
+  return graph.kinds.get(tag) !== 'egg'
 }
 
 function doerKeys(p: Process, keys: Set<string>) {
