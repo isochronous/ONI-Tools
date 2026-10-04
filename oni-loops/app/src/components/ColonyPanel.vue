@@ -1,41 +1,39 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { gameData } from '../data/load'
-import { useGraph } from '../model'
-import { useColonyStore } from '../stores/colony'
 import { randomGeyserSlots } from '../model/tiers'
+import { useColonyStore } from '../stores/colony'
 
 const store = useColonyStore()
-const graph = useGraph()
 const showCritters = ref(false)
 
-/** Critters that can be ranched (adults with a diet, egg, shear, or drop) under the chosen DLCs. */
-const critters = computed(() => {
-  const list: { id: string; name: string }[] = []
-  for (const c of gameData.critters) {
-    if (c.adult) continue // babies are listed under their adult
-    if (c.dlc.requires.some((id) => !store.dlcs.has(id))) continue
-    if (!graph.byOutput.size) continue
-    list.push({ id: c.id, name: c.name })
-  }
-  return list.sort((a, b) => a.name.localeCompare(b.name))
-})
-
+/** Adult critters under the chosen DLCs; babies are covered by their adult. */
+const critters = computed(() =>
+  gameData.critters
+    .filter((c) => !c.adult && !c.dlc.requires.some((id) => !store.dlcs.has(id)))
+    .map((c) => ({ id: c.id, name: c.name }))
+    .sort((a, b) => a.name.localeCompare(b.name)),
+)
 const allIds = computed(() => critters.value.map((c) => c.id))
 
 /** Clusters playable with the chosen DLCs. */
 const clusters = computed(() =>
   gameData.clusters
-    .filter((c) => c.dlc.requires.every((id) => store.dlcs.has(id)) && !c.dlc.forbids.some((id) => store.dlcs.has(id)))
+    .filter(
+      (c) =>
+        c.dlc.requires.every((id) => store.dlcs.has(id)) &&
+        !c.dlc.forbids.some((id) => store.dlcs.has(id)),
+    )
     .sort((a, b) => a.name.localeCompare(b.name)),
 )
 const randomSlots = computed(() => randomGeyserSlots(gameData, store.clusterData))
 const geyserTypes = computed(() =>
   gameData.geysers
     .filter((g) => g.dlc.requires.every((id) => store.dlcs.has(id)))
-    .map((g) => ({ id: g.id, name: gameData.names['GeyserGeneric_' + g.id] ?? g.id }))
+    .map((g) => ({ id: g.id, name: geyserName(g.id) }))
     .sort((a, b) => a.name.localeCompare(b.name)),
 )
+
 function geyserName(id: string) {
   return gameData.names['GeyserGeneric_' + id] ?? id
 }
@@ -46,80 +44,103 @@ function has(id: string) {
 </script>
 
 <template>
-  <section class="panel">
+  <section class="panel" aria-label="My colony">
     <h2>My colony</h2>
+    <p class="hint">What you have decides which answers exist and how they are ranked.</p>
 
     <div class="group">
-      <h3>DLCs</h3>
+      <p class="eyebrow">Game</p>
       <label v-for="d in gameData.dlcs" :key="d.id" class="check">
         <input type="checkbox" :checked="store.dlcs.has(d.id)" @change="store.toggleDlc(d.id)" />
         {{ d.name }}
       </label>
-      <p class="hint">Spaced Out! is a different game: one asteroid and the Starmap without it, a cluster with rocket mining otherwise. Toggling it reloads with the matching game data.</p>
+      <p class="hint">
+        Spaced Out! is a different game: one asteroid and the Starmap without it, a cluster with
+        rocket mining otherwise. Switching it reloads with the matching game data.
+      </p>
     </div>
 
     <div class="group">
-      <h3>Asteroid</h3>
-      <select :value="store.cluster ?? ''" @change="store.cluster = ($event.target as HTMLSelectElement).value || null">
+      <p class="eyebrow">Asteroid</p>
+      <select
+        :value="store.cluster ?? ''"
+        aria-label="Asteroid"
+        @change="store.cluster = ($event.target as HTMLSelectElement).value || null"
+      >
         <option value="">Not chosen (no terrain or geyser knowledge)</option>
         <option v-for="c in clusters" :key="c.id" :value="c.id">{{ c.name }}</option>
       </select>
       <template v-if="store.clusterData">
-        <p v-if="store.guaranteed.size" class="hint">
+        <p v-if="store.guaranteed.size" class="hint geysers">
           Guaranteed geysers:
-          <span v-for="[id, g] in store.guaranteed" :key="id" class="chip">{{ g.min === g.max ? g.min : g.min + '–' + g.max }}× {{ geyserName(id) }}</span>
+          <span v-for="[id, g] in store.guaranteed" :key="id" class="chip"
+            >{{ g.min === g.max ? g.min : g.min + '–' + g.max }}× {{ geyserName(id) }}</span
+          >
         </p>
-        <p v-if="randomSlots.length" class="hint">
-          Plus {{ randomSlots.map((s) => `${s.count} seed-random on ${s.world}`).join(', ') }}. Tick the ones you have found:
-        </p>
-        <div v-if="randomSlots.length" class="critters">
-          <label v-for="g in geyserTypes" :key="g.id" class="check">
-            <input type="checkbox" :checked="store.geysers.has(g.id)" :disabled="store.guaranteed.has(g.id)" @change="store.toggleGeyser(g.id)" />
-            {{ g.name }}
-          </label>
-        </div>
+        <template v-if="randomSlots.length">
+          <p class="hint">
+            Plus {{ randomSlots.map((s) => `${s.count} seed-random on ${s.world}`).join(', ') }}.
+            Tick the ones you have found:
+          </p>
+          <div class="list">
+            <label v-for="g in geyserTypes" :key="g.id" class="check">
+              <input
+                type="checkbox"
+                :checked="store.geysers.has(g.id)"
+                :disabled="store.guaranteed.has(g.id)"
+                @change="store.toggleGeyser(g.id)"
+              />
+              {{ g.name }}
+            </label>
+          </div>
+        </template>
       </template>
     </div>
 
     <div class="group">
-      <h3>Loops</h3>
-      <label class="slider">
-        Show loops that return at least <strong>{{ Math.round(store.loopFloor * 100) }}%</strong>
-        <input v-model.number="store.loopFloor" type="range" min="0" max="1" step="0.05" />
-      </label>
-      <p class="hint">100% lists only net-positive loops; lower it to see loops whose shortfall you can top up from elsewhere.</p>
-      <label class="slider">
-        Call a loop side-stream when the target is under <strong>{{ Math.round(store.primaryShare * 100) }}%</strong> of what a step consumes
-        <input v-model.number="store.primaryShare" type="range" min="0" max="1" step="0.05" />
-      </label>
-      <p class="hint">A side-stream loop passes through a step where the loop's own material is only a small part of what that step consumes, so the step's output is really paid for by something else: 0.04 kg of carbon dioxide into an Algae Terrarium that drinks 180 kg of water does not make the water "free". They are listed last.</p>
-      <label class="slider">
-        Drive topped-up loops to return <strong>×{{ store.topUpRatio }}</strong>
-        <input v-model.number="store.topUpRatio" type="range" min="1" max="10" step="0.5" />
-      </label>
-      <p class="hint">When a loop's intermediate can be added from outside (polluted water from a geyser), the chain after it is run harder until the loop returns this much; the card lists how much extra to feed.</p>
-    </div>
-
-    <div class="group">
-      <h3>
+      <p class="eyebrow row">
         Critters
-        <button class="link" @click="showCritters = !showCritters">{{ showCritters ? 'hide' : 'choose' }}</button>
-      </h3>
+        <button type="button" class="link" @click="showCritters = !showCritters">
+          {{ showCritters ? 'Done' : 'Choose' }}
+        </button>
+      </p>
       <p v-if="store.critters === null" class="hint">
         Assuming any critter is available.
-        <button v-if="showCritters" class="link" @click="store.critters = new Set()">Start from none</button>
+        <button v-if="showCritters" type="button" class="link" @click="store.critters = new Set()">
+          Start from none
+        </button>
       </p>
       <p v-else class="hint">
-        {{ store.critters.size }} of {{ critters.length }} selected.
-        <button class="link" @click="store.assumeAllCritters()">Assume all</button>
+        {{ store.critters.size }} of {{ critters.length }} available.
+        <button type="button" class="link" @click="store.assumeAllCritters()">Assume all</button>
       </p>
-      <div v-if="showCritters" class="critters">
+      <div v-if="showCritters" class="list">
         <label v-for="c in critters" :key="c.id" class="check">
-          <input type="checkbox" :checked="has(c.id)" @change="store.setCritter(c.id, ($event.target as HTMLInputElement).checked, allIds)" />
+          <input
+            type="checkbox"
+            :checked="has(c.id)"
+            @change="store.setCritter(c.id, ($event.target as HTMLInputElement).checked, allIds)"
+          />
           {{ c.name }}
         </label>
       </div>
     </div>
+
+    <details class="group fine">
+      <summary>Fine print</summary>
+      <label class="slider">
+        Call a loop side-stream when the target is under
+        <strong class="num">{{ Math.round(store.primaryShare * 100) }}%</strong> of what a step
+        consumes
+        <input v-model.number="store.primaryShare" type="range" min="0" max="1" step="0.05" />
+      </label>
+      <p class="hint">
+        A side-stream loop passes through a step where the loop's own material is only a small part
+        of what that step consumes, so the step's output is really paid for by something else: 0.04
+        kg of carbon dioxide into an Algae Terrarium that drinks 180 kg of water does not make the
+        water "free". They are listed after the others.
+      </p>
+    </details>
   </section>
 </template>
 
@@ -127,44 +148,44 @@ function has(id: string) {
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1rem 1.1rem;
+  border-radius: var(--radius-card);
+  padding: 1.1rem 1.25rem 1.25rem;
 }
 h2 {
-  margin: 0 0 0.6rem;
-  font-size: 1.05rem;
+  margin: 0 0 0.25rem;
+  font-size: 1.125rem;
 }
-h3 {
-  margin: 0.9rem 0 0.4rem;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
+.group {
+  margin-top: 1.25rem;
+}
+.eyebrow.row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
 }
+.eyebrow .link {
+  font-size: 0.875rem;
+}
 .check {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.6rem;
   align-items: center;
   padding: 0.2rem 0;
   cursor: pointer;
 }
-.slider {
-  display: block;
-}
-.slider input {
-  display: block;
-  width: 100%;
-  margin-top: 0.3rem;
+.check input {
+  accent-color: var(--accent);
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
 }
 .hint {
-  margin: 0.3rem 0 0;
-  font-size: 0.85rem;
-  color: var(--muted);
+  margin-top: 0.4rem;
 }
-.critters {
+.geysers .chip {
+  margin: 0.15rem 0.2rem 0.15rem 0;
+}
+.list {
   max-height: 18rem;
   overflow: auto;
   margin-top: 0.4rem;
@@ -172,27 +193,24 @@ h3 {
 }
 select {
   width: 100%;
-  padding: 0.4rem;
-  background: var(--bg);
-  color: var(--text);
+  padding: 0.45rem 0.5rem;
+  background: var(--raised);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
 }
-.chip {
-  display: inline-block;
-  margin: 0.1rem 0.2rem 0.1rem 0;
-  padding: 0 0.4rem;
-  border-radius: 999px;
-  background: var(--hover);
-  color: var(--text);
+.slider {
+  display: block;
+  font-size: 0.9375rem;
 }
-.link {
-  background: none;
-  border: none;
-  color: var(--accent);
+.slider input {
+  display: block;
+  margin-top: 0.3rem;
+}
+.fine summary {
   cursor: pointer;
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
 }
 </style>

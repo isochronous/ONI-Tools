@@ -65,6 +65,103 @@ namespace OniDataDump
 			File.WriteAllText(path, root.ToString(Formatting.Indented));
 		}
 
+		/// <summary>Buildings the data refers to (fabricators and converters), so only their icons are written.</summary>
+		private static readonly HashSet<string> usedBuildings = new HashSet<string>();
+
+		// ---- icons ----
+
+		/// <summary>
+		/// The game's own UI sprite for every element, item, critter, plant, and used building,
+		/// as a small PNG named by tag, plus index.json listing the tags written. Liquids and
+		/// gases share one droplet / cloud sprite tinted with the element's colour, as in the
+		/// game. Sprites live in atlases the CPU cannot read, so each atlas is copied through
+		/// a render texture once.
+		/// </summary>
+		public static void WriteIcons(string dir, int maxSize = 64)
+		{
+			Directory.CreateDirectory(dir);
+			var written = new JArray();
+			var seen = new HashSet<string>();
+			void Save(string tag, Tuple<Sprite, Color> ui)
+			{
+				if (ui?.first == null || !seen.Add(tag))
+					return;
+				try
+				{
+					File.WriteAllBytes(Path.Combine(dir, tag + ".png"), Png(ui.first, ui.second, maxSize));
+					written.Add(tag);
+				}
+				catch (Exception e)
+				{
+					Debug.LogWarning("[OniDataDump] No icon for " + tag + ": " + e.Message);
+				}
+			}
+			foreach (Element e in ElementLoader.elements)
+				if (e != null && !e.disabled)
+					Save(e.id.ToString(), Def.GetUISprite(e));
+			foreach (KPrefabID id in ItemPrefabs())
+				Save(id.PrefabTag.ToString(), Def.GetUISprite(id.gameObject));
+			foreach (BuildingDef def in Assets.BuildingDefs)
+				if (usedBuildings.Contains(def.PrefabID))
+					Save(def.PrefabID, new Tuple<Sprite, Color>(def.GetUISprite(), Color.white));
+			foreach (Texture2D copy in readable.Values)
+				UnityEngine.Object.Destroy(copy);
+			readable.Clear();
+			File.WriteAllText(Path.Combine(dir, "index.json"), written.ToString(Formatting.None));
+		}
+
+		private static readonly Dictionary<Texture2D, Texture2D> readable = new Dictionary<Texture2D, Texture2D>();
+
+		/// <summary>A CPU-readable copy of a (usually unreadable) atlas, made once per atlas.</summary>
+		private static Texture2D Readable(Texture2D src)
+		{
+			if (readable.TryGetValue(src, out Texture2D copy))
+				return copy;
+			RenderTexture rt = RenderTexture.GetTemporary(src.width, src.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+			RenderTexture previous = RenderTexture.active;
+			Graphics.Blit(src, rt);
+			RenderTexture.active = rt;
+			copy = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+			copy.ReadPixels(new Rect(0, 0, src.width, src.height), 0, 0);
+			copy.Apply();
+			RenderTexture.active = previous;
+			RenderTexture.ReleaseTemporary(rt);
+			readable[src] = copy;
+			return copy;
+		}
+
+		/// <summary>The sprite's pixels, tinted, scaled down to fit maxSize with supersampling, as PNG.</summary>
+		private static byte[] Png(Sprite sprite, Color tint, int maxSize)
+		{
+			Texture2D src = Readable(sprite.texture);
+			Rect r;
+			try { r = sprite.textureRect; } catch (Exception) { r = sprite.rect; }
+			int w = Mathf.Max(1, Mathf.RoundToInt(r.width)), h = Mathf.Max(1, Mathf.RoundToInt(r.height));
+			float scale = Mathf.Min(1f, maxSize / (float)Mathf.Max(w, h));
+			int ow = Mathf.Max(1, Mathf.RoundToInt(w * scale)), oh = Mathf.Max(1, Mathf.RoundToInt(h * scale));
+			int ss = Mathf.Max(1, Mathf.CeilToInt(1f / scale));
+			var pixels = new Color[ow * oh];
+			for (int y = 0; y < oh; y++)
+				for (int x = 0; x < ow; x++)
+				{
+					Color sum = Color.clear;
+					for (int sy = 0; sy < ss; sy++)
+						for (int sx = 0; sx < ss; sx++)
+						{
+							float u = (r.x + (x + (sx + 0.5f) / ss) * w / ow) / src.width;
+							float v = (r.y + (y + (sy + 0.5f) / ss) * h / oh) / src.height;
+							sum += src.GetPixelBilinear(u, v);
+						}
+					pixels[y * ow + x] = sum / (ss * ss) * tint;
+				}
+			var tex = new Texture2D(ow, oh, TextureFormat.RGBA32, false);
+			tex.SetPixels(pixels);
+			tex.Apply();
+			byte[] png = tex.EncodeToPNG();
+			UnityEngine.Object.Destroy(tex);
+			return png;
+		}
+
 		// ---- helpers ----
 
 		/// <summary>"all-dlcs", "base", "no-spaced-out", or the active ids joined; mirrors tools/import-dump.py.</summary>
@@ -186,10 +283,9 @@ namespace OniDataDump
 			return arr;
 		}
 
-		/// <summary>Non-element things that recipes, diets, and drops refer to: food, seeds, eggs, shells, critters.</summary>
-		private static JArray Items()
+		/// <summary>Prefabs that are things rather than buildings or elements: food, seeds, eggs, shells, critters, plants.</summary>
+		private static IEnumerable<KPrefabID> ItemPrefabs()
 		{
-			var arr = new JArray();
 			foreach (KPrefabID id in Assets.Prefabs)
 			{
 				GameObject prefab = id.gameObject;
@@ -197,6 +293,17 @@ namespace OniDataDump
 					continue;
 				if (ElementLoader.GetElement(id.PrefabTag) != null)
 					continue;
+				yield return id;
+			}
+		}
+
+		/// <summary>Non-element things that recipes, diets, and drops refer to: food, seeds, eggs, shells, critters.</summary>
+		private static JArray Items()
+		{
+			var arr = new JArray();
+			foreach (KPrefabID id in ItemPrefabs())
+			{
+				GameObject prefab = id.gameObject;
 				var o = new JObject
 				{
 					["id"] = id.PrefabTag.ToString(),
@@ -244,6 +351,8 @@ namespace OniDataDump
 				};
 				if (r.consumedHEP > 0) o["radboltsIn"] = r.consumedHEP;
 				if (r.producedHEP > 0) o["radboltsOut"] = r.producedHEP;
+				foreach (Tag f in r.fabricators)
+					usedBuildings.Add(f.ToString());
 				arr.Add(o);
 			}
 			return arr;
@@ -299,6 +408,7 @@ namespace OniDataDump
 				}
 				if (inputs.Count == 0 && outputs.Count == 0)
 					continue;
+				usedBuildings.Add(def.PrefabID);
 				arr.Add(new JObject
 				{
 					["id"] = def.PrefabID,

@@ -1,15 +1,52 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { label } from '../data/load'
-import { qty, unitOf } from '../model'
-import { fmt, stepLabel } from '../model/graph'
-import { effectiveRatio, isPositive, type Loop, type Step } from '../model/search'
+import { qty, unitOf, useGraph } from '../model'
+import { fmt, stepLabel, type Flow } from '../model/graph'
+import { isPositive, runAt, type Loop } from '../model/search'
 import { TIER_LABEL, type Tiers } from '../model/tiers'
+import { useColonyStore } from '../stores/colony'
+import TagIcon from './TagIcon.vue'
 
 const props = defineProps<{ loop: Loop; target: string; tiers: Tiers }>()
+const graph = useGraph()
+const store = useColonyStore()
 
-/** Green when the loop pays back on its own or with its top-up. */
-const positive = computed(() => isPositive(props.loop) || props.loop.topUp !== undefined)
+/** Returns a topped-up loop can be driven to, besides what it does alone. */
+const PRESET_RETURNS = [1, 1.5, 2]
+
+interface Preset {
+  value: number
+  text: string
+}
+
+/** Up to three choices: the loop as it is when that already pays back, then the fixed returns above it. */
+const presets = computed<Preset[]>(() => {
+  if (!props.loop.topUp) return []
+  const list: Preset[] = []
+  if (props.loop.ratio >= 1) list.push({ value: props.loop.ratio, text: 'as is' })
+  for (const v of PRESET_RETURNS)
+    if (v > props.loop.ratio + 1e-9) list.push({ value: v, text: `×${fmt(v)}` })
+  return list.slice(0, 3)
+})
+
+const want = ref(defaultWant())
+watch(
+  () => props.loop,
+  () => (want.value = defaultWant()),
+)
+
+function defaultWant(): number {
+  return props.loop.ratio >= 1 ? props.loop.ratio : 1
+}
+
+const run = computed(() =>
+  runAt(graph, props.loop, want.value, props.target, store.colony, props.tiers),
+)
+const paysBack = computed(
+  () => run.value.ratio > 1.0001 || (props.loop.topUp !== undefined && run.value.ratio >= 1 - 1e-9),
+)
+const unit = computed(() => unitOf(props.target).trim() || 'unit of')
 
 /**
  * Units arriving at step `i` per unit of target, including the top-up once the chain has
@@ -19,57 +56,153 @@ function into(i: number): number {
   let amount = 1
   for (let k = 0; k < i; k++) amount *= props.loop.steps[k]!.ratio
   const t = props.loop.topUp
-  if (t && i >= t.step) amount *= t.ratio / props.loop.ratio
+  if (t && run.value.topUpAmount > 0 && i >= t.step) amount *= run.value.ratio / props.loop.ratio
   return amount
 }
 
-/** Units leaving step `i`, likewise. */
-function outOf(i: number): number {
-  return into(i + 1)
+/** "0.045 kg Sand", or "0.5 kg of any seed" for an input that takes several things. */
+function flowText(f: Flow): string {
+  if (!f.anyOf) return qty(f.amount, f.tag)
+  return `${fmt(f.amount)}${unitOf(f.tag)} of any ${f.anyOfName ?? graph.kinds.get(f.tag) ?? 'item'}`
 }
 
-function how(s: Step): string {
-  return stepLabel(s.process)
+/** Joins names the way a sentence would: "a", "a and b", "a, b, and c". */
+function list(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? ''
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`
 }
 
-function needsOf(s: Step): string[] {
-  const n = s.process.needs.extras ?? []
-  return n
+function alternatives(names: string[]): string {
+  const shown = names.slice(0, 3)
+  const more = names.length - shown.length
+  return more > 0 ? `${list([...shown, `${more} more`])}` : list(shown)
+}
+
+/** The step's conditions as a sentence: "Steam at 125 °C or hotter; across up to 24 vines on one plant." */
+function needs(extras: string[] | undefined): string {
+  if (!extras?.length) return ''
+  const text = extras.join('; ')
+  return text.charAt(0).toUpperCase() + text.slice(1) + '.'
 }
 </script>
 
 <template>
-  <article class="loop" :class="{ positive }">
-    <header>
-      <span class="ratio">×{{ fmt(effectiveRatio(loop)) }}</span>
-      <span class="tier">{{ loop.topUp ? 'with a top-up' : positive ? 'net-positive loop' : 'top-up loop' }}</span>
-      <span v-if="!loop.primary" class="side" :title="`At one step ${label(target)}'s share of what the machine eats is only ${fmt(loop.minShare * 100)}%; the rest is the real cost.`">side-stream</span>
-      <span v-if="loop.topUp" class="shortfall">with {{ qty(loop.topUp.amount, loop.topUp.tag) }} extra ({{ TIER_LABEL[loop.topUp.tier] }}) per {{ unitOf(target).trim() || 'unit of' }} {{ label(target) }} fed into step {{ loop.topUp.step + 1 }}; ×{{ fmt(loop.ratio) }} on its own</span>
-      <span v-else-if="!positive" class="shortfall">returns {{ fmt(loop.ratio) }} per 1{{ unitOf(target) }} {{ label(target) }}; top up {{ fmt(1 - loop.ratio) }}{{ unitOf(target) }} elsewhere</span>
-    </header>
-    <ol class="chain">
-      <li v-for="(s, i) in loop.steps" :key="i">
-        <span class="from">{{ qty(into(i), s.from) }}<small v-if="loop.topUp && loop.topUp.step === i" class="topup">incl. {{ fmt(loop.topUp.amount) }}{{ unitOf(s.from) }} top-up</small></span>
-        <span class="arrow">→</span>
-        <span class="how">
-          {{ how(s) }}
-          <small v-for="n in needsOf(s)" :key="n" class="need">{{ n }}</small>
-          <small v-if="s.alternatives?.length" class="alt" :title="s.alternatives.join(', ')">or {{ s.alternatives.slice(0, 3).join(', or ') }}<template v-if="s.alternatives.length > 3"> and {{ s.alternatives.length - 3 }} more</template></small>
+  <article class="loop" :class="{ 'pays-back': paysBack }">
+    <header class="head">
+      <p class="return">
+        <span class="ratio num">×{{ fmt(run.ratio) }}</span>
+        <span class="return-text">
+          <template v-if="run.topUpAmount > 0">
+            back for every {{ unit }} {{ label(target) }} in, with
+            <strong>{{ qty(run.topUpAmount, loop.topUp!.tag) }}</strong> added along the way. Alone
+            it returns ×{{ fmt(loop.ratio) }}.
+          </template>
+          <template v-else-if="isPositive(loop)"
+            >back for every {{ unit }} {{ label(target) }} in, with nothing added.</template
+          >
+          <template v-else
+            >back for every {{ unit }} {{ label(target) }} in. Nothing in this chain can be topped
+            up from outside, so the rest has to come from another source.</template
+          >
         </span>
-        <span class="arrow">→</span>
-        <span class="to">{{ qty(outOf(i), s.to) }}</span>
+      </p>
+      <div
+        v-if="presets.length > 1"
+        class="presets"
+        role="group"
+        aria-label="Drive this loop to return"
+      >
+        <span class="presets-label">Drive to</span>
+        <button
+          v-for="p in presets"
+          :key="p.value"
+          type="button"
+          class="preset"
+          :class="{ on: Math.abs(p.value - want) < 1e-9 }"
+          :aria-pressed="Math.abs(p.value - want) < 1e-9"
+          @click="want = p.value"
+        >
+          {{ p.text }}
+        </button>
+      </div>
+      <span
+        v-if="!loop.primary"
+        class="side"
+        :title="`At one step ${label(target)} is only ${fmt(loop.minShare * 100)}% of what the machine eats; the rest is the real cost.`"
+        >side-stream</span
+      >
+    </header>
+
+    <ol class="chain">
+      <li v-for="(s, i) in loop.steps" :key="i" class="step">
+        <p class="node">
+          <span class="amount num"><TagIcon :tag="s.from" />{{ qty(into(i), s.from) }}</span>
+          <span v-if="loop.topUp && loop.topUp.step === i && run.topUpAmount > 0" class="added"
+            >of which {{ qty(run.topUpAmount, s.from) }} is added from outside ({{
+              TIER_LABEL[loop.topUp.tier]
+            }})</span
+          >
+        </p>
+        <p class="via">
+          <span class="how"
+            ><TagIcon
+              v-if="s.process.needs.building || s.process.needs.critter || s.process.needs.plant"
+              :tag="s.process.needs.building ?? s.process.needs.critter ?? s.process.needs.plant!"
+            />{{ stepLabel(s.process) }}</span
+          ><template v-if="run.steps[i]!.extraInputs.length">
+            with
+            <template v-for="(f, k) in run.steps[i]!.extraInputs" :key="f.tag"
+              ><template v-if="k > 0">{{
+                k === run.steps[i]!.extraInputs.length - 1 ? ' and ' : ', '
+              }}</template
+              ><span
+                class="extra"
+                :class="'t-' + tiers.of(f.tag)"
+                :title="`${TIER_LABEL[tiers.of(f.tag)]}: ${tiers.reason(f.tag)}`"
+                >{{ flowText(f) }}</span
+              ></template
+            ></template
+          ><template v-if="run.steps[i]!.extraOutputs.length"
+            >, leaving {{ list(run.steps[i]!.extraOutputs.map(flowText)) }}</template
+          >.<template v-if="needs(s.process.needs.extras)">{{
+            ' ' + needs(s.process.needs.extras)
+          }}</template
+          ><template v-if="s.alternatives?.length"
+            ><span class="alt" :title="s.alternatives.join(', ')">{{
+              ' Or ' + alternatives(s.alternatives) + '.'
+            }}</span></template
+          >
+        </p>
+      </li>
+      <li class="step end">
+        <p class="node">
+          <span class="amount num"
+            ><TagIcon :tag="target" />{{ qty(into(loop.steps.length), target) }}</span
+          >
+          <span class="back">back where it started</span>
+        </p>
       </li>
     </ol>
-    <footer v-if="loop.externals.length || loop.byproducts.length">
-      <p v-if="loop.externals.length">
-        <strong>Also needs</strong> per 1{{ unitOf(target) }} {{ label(target) }}:
-        <span v-for="f in loop.externals" :key="f.tag" class="chip" :class="'t-' + tiers.of(f.tag)" :title="tiers.reason(f.tag)">{{ qty(f.amount, f.tag) }} <em>{{ TIER_LABEL[tiers.of(f.tag)] }}</em></span>
-      </p>
-      <p v-if="loop.byproducts.length">
-        <strong>Also makes</strong>:
-        <span v-for="f in loop.byproducts" :key="f.tag" class="chip plus">{{ qty(f.amount, f.tag) }}</span>
-      </p>
-    </footer>
+
+    <p v-if="run.externals.length || run.byproducts.length" class="foot">
+      Over the whole loop, per {{ unit }} {{ label(target) }}:
+      <template v-if="run.externals.length">
+        <template v-for="(f, k) in run.externals" :key="f.tag"
+          ><template v-if="k > 0">{{ k === run.externals.length - 1 ? ' and ' : ', ' }}</template
+          ><span
+            class="extra"
+            :class="'t-' + tiers.of(f.tag)"
+            :title="`${TIER_LABEL[tiers.of(f.tag)]}: ${tiers.reason(f.tag)}`"
+            >{{ qty(f.amount, f.tag) }}</span
+          ></template
+        >
+        in<template v-if="run.byproducts.length">; </template>
+      </template>
+      <template v-if="run.byproducts.length">
+        {{ list(run.byproducts.map((f) => qty(f.amount, f.tag))) }} out</template
+      >.
+    </p>
   </article>
 </template>
 
@@ -77,110 +210,183 @@ function needsOf(s: Step): string[] {
 .loop {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-left: 4px solid var(--muted);
-  border-radius: 10px;
-  padding: 0.8rem 1rem;
+  border-radius: var(--radius-card);
+  padding: 1rem 1.25rem 1.1rem;
 }
-.loop.positive {
-  border-left-color: var(--good);
+.loop.pays-back {
+  border-color: rgba(138, 209, 127, 0.35);
 }
-header {
+
+.head {
   display: flex;
-  gap: 0.8rem;
-  align-items: baseline;
   flex-wrap: wrap;
-  margin-bottom: 0.5rem;
+  align-items: flex-start;
+  gap: 0.75rem 1.5rem;
+  margin-bottom: 1rem;
+}
+.return {
+  flex: 1 1 24rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  max-width: var(--measure);
 }
 .ratio {
-  font-size: 1.4rem;
+  font-size: 1.75rem;
   font-weight: 700;
+  line-height: 1;
+  color: var(--warn);
 }
-.positive .ratio {
+.pays-back .ratio {
   color: var(--good);
 }
-.tier {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.return-text {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+.return-text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.presets {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.presets-label {
+  font-size: 0.875rem;
   color: var(--muted);
 }
-.shortfall {
-  font-size: 0.85rem;
-  color: var(--muted);
+.preset {
+  padding: 0.25rem 0.7rem;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
 }
+.preset + .preset {
+  margin-left: -1px;
+}
+.preset:first-of-type {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+.preset:last-of-type {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+.preset:first-of-type:last-of-type {
+  border-radius: var(--radius-control);
+}
+.preset:hover {
+  border-color: var(--border-strong);
+}
+.preset.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  position: relative;
+}
+
+.side {
+  align-self: center;
+  font-size: 0.8125rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-control);
+  color: var(--warn);
+}
+
+/* The chain: materials sit on a rail, the process between two materials hangs off it. */
 .chain {
   margin: 0;
-  padding: 0;
+  padding: 0 0 0 1.25rem;
   list-style: none;
-  display: grid;
-  gap: 0.25rem;
+  position: relative;
 }
-.chain li {
-  display: grid;
-  grid-template-columns: minmax(8rem, 1fr) auto minmax(10rem, 1.4fr) auto minmax(8rem, 1fr);
-  gap: 0.5rem;
-  align-items: center;
-  font-size: 0.95rem;
+.chain::before {
+  content: '';
+  position: absolute;
+  left: 0.3125rem;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  width: 2px;
+  background: var(--rail);
+  border-radius: 1px;
 }
-.arrow {
+.step {
+  position: relative;
+}
+.node {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  min-height: 1.5rem;
+}
+.node::before {
+  content: '';
+  position: absolute;
+  left: -1.25rem;
+  top: 0.4375rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 2px solid var(--muted);
+}
+.end .node::before {
+  border-color: var(--good);
+  background: var(--good);
+}
+.loop:not(.pays-back) .end .node::before {
+  border-color: var(--warn);
+  background: var(--warn);
+}
+.amount {
+  font-weight: 600;
+}
+.added {
+  font-size: 0.875rem;
+  color: var(--good);
+}
+.back {
+  font-size: 0.875rem;
   color: var(--muted);
+}
+.via {
+  padding: 0.3rem 0 0.5rem 1.25rem;
+  font-size: 0.9375rem;
+  color: var(--muted);
+  max-width: var(--measure);
 }
 .how {
   color: var(--accent);
 }
-.need {
-  display: inline-block;
-  margin-left: 0.4rem;
-  padding: 0 0.35rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-footer {
-  margin-top: 0.6rem;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-footer p {
-  margin: 0.2rem 0;
-}
-.chip {
-  display: inline-block;
-  margin: 0.1rem 0.25rem;
-  padding: 0.05rem 0.45rem;
-  border-radius: 999px;
-  background: var(--hover);
+.extra {
   color: var(--text);
 }
-.chip.plus {
-  background: rgba(80, 200, 120, 0.15);
+.extra.t-off-world {
+  text-decoration: underline dotted var(--border-strong);
 }
-.chip em {
-  font-style: normal;
-  color: var(--muted);
-  font-size: 0.75rem;
-  margin-left: 0.2rem;
-}
-.chip.t-space,
-.chip.t-none {
-  outline: 1px solid var(--warn);
-}
-.side {
-  font-size: 0.75rem;
-  padding: 0 0.4rem;
-  border: 1px solid var(--warn);
-  border-radius: 4px;
-  color: var(--warn);
+.extra.t-space,
+.extra.t-none {
+  text-decoration: underline dotted var(--warn);
+  text-underline-offset: 0.15em;
 }
 .alt {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--muted);
+  color: var(--faint);
 }
-.topup {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--good);
+
+.foot {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+  color: var(--muted);
+  max-width: var(--measure);
 }
 </style>

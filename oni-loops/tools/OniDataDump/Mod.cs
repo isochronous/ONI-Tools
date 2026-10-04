@@ -37,6 +37,10 @@ namespace OniDataDump
 			{
 				Dump.WriteTo(path);
 				Debug.Log("[OniDataDump] Wrote " + path);
+				// Icons do not depend on the DLC set beyond which things exist, so one folder serves every flavour.
+				string icons = Path.Combine(Util.RootFolder(), "oni-data-dump.icons");
+				Dump.WriteIcons(icons);
+				Debug.Log("[OniDataDump] Wrote icons to " + icons);
 			}
 			catch (Exception e)
 			{

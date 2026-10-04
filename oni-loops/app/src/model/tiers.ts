@@ -9,7 +9,13 @@ import { isAvailable } from './search'
  */
 export type Tier = 'renewable' | 'local' | 'off-world' | 'space' | 'none'
 
-export const TIER_ORDER: Record<Tier, number> = { renewable: 0, local: 1, 'off-world': 2, space: 3, none: 4 }
+export const TIER_ORDER: Record<Tier, number> = {
+  renewable: 0,
+  local: 1,
+  'off-world': 2,
+  space: 3,
+  none: 4,
+}
 
 export const TIER_LABEL: Record<Tier, string> = {
   renewable: 'renewable',
@@ -26,17 +32,30 @@ export interface Tiers {
 }
 
 /** Geysers a cluster's worlds are guaranteed, by geyser type id ("molten_iron"), with how many. */
-export function guaranteedGeysers(d: GameData, cluster: ClusterData | null): Map<string, { min: number; max: number; worlds: string[] }> {
+export function guaranteedGeysers(
+  d: GameData,
+  cluster: ClusterData | null,
+): Map<string, { min: number; max: number; worlds: string[] }> {
   const out = new Map<string, { min: number; max: number; worlds: string[] }>()
   if (!cluster) return out
   for (const world of worldsOf(d, cluster)) {
     for (const rule of world.geyserRules) {
       if (!rule.listRule.startsWith('Guarantee')) continue
       const types = new Set<string>()
-      for (const t of rule.templates) for (const g of t.geysers) if (g.startsWith('GeyserGeneric_')) types.add(g.slice('GeyserGeneric_'.length))
+      for (const t of rule.templates)
+        for (const g of t.geysers)
+          if (g.startsWith('GeyserGeneric_')) types.add(g.slice('GeyserGeneric_'.length))
       if (types.size !== 1) continue // mixed templates: the type is a coin flip; leave to the player
       const type = [...types][0]!
-      const [min, max] = ruleCount(rule.listRule, rule.someCount, rule.moreCount, rule.rangeMin, rule.rangeMax, rule.times, rule.templates.length)
+      const [min, max] = ruleCount(
+        rule.listRule,
+        rule.someCount,
+        rule.moreCount,
+        rule.rangeMin,
+        rule.rangeMax,
+        rule.times,
+        rule.templates.length,
+      )
       const entry = out.get(type) ?? { min: 0, max: 0, worlds: [] }
       entry.min += min
       entry.max += max
@@ -48,19 +67,31 @@ export function guaranteedGeysers(d: GameData, cluster: ClusterData | null): Map
 }
 
 /** How many seed-random generic geysers each world of the cluster rolls. */
-export function randomGeyserSlots(d: GameData, cluster: ClusterData | null): { world: string; count: number }[] {
+export function randomGeyserSlots(
+  d: GameData,
+  cluster: ClusterData | null,
+): { world: string; count: number }[] {
   if (!cluster) return []
   const out: { world: string; count: number }[] = []
   for (const world of worldsOf(d, cluster)) {
     let count = 0
     for (const rule of world.geyserRules)
-      if (rule.templates.some((t) => t.geysers.includes('GeyserGeneric'))) count += rule.listRule.startsWith('Try') ? rule.times : rule.someCount + rule.moreCount
+      if (rule.templates.some((t) => t.geysers.includes('GeyserGeneric')))
+        count += rule.listRule.startsWith('Try') ? rule.times : rule.someCount + rule.moreCount
     if (count) out.push({ world: world.name, count })
   }
   return out
 }
 
-function ruleCount(rule: string, some: number, more: number, rangeMin: number, rangeMax: number, times: number, templates: number): [number, number] {
+function ruleCount(
+  rule: string,
+  some: number,
+  more: number,
+  rangeMin: number,
+  rangeMax: number,
+  times: number,
+  templates: number,
+): [number, number] {
   switch (rule) {
     case 'GuaranteeOne':
       return [1, 1]
@@ -96,7 +127,13 @@ export function startWorld(d: GameData, cluster: ClusterData | null): WorldData 
  * shears, and drops take no inputs, so their outputs are renewable), and every tag keeps
  * the best tier any route offers. This is a fixed point over an ordered scale, so it settles.
  */
-export function computeTiers(d: GameData, graph: Graph, colony: Colony, cluster: ClusterData | null, geysers: Set<string>): Tiers {
+export function computeTiers(
+  d: GameData,
+  graph: Graph,
+  colony: Colony,
+  cluster: ClusterData | null,
+  geysers: Set<string>,
+): Tiers {
   const tier = new Map<string, Tier>()
   const reason = new Map<string, string>()
   const set = (tag: string, t: Tier, why: string) => {
@@ -115,24 +152,38 @@ export function computeTiers(d: GameData, graph: Graph, colony: Colony, cluster:
   const start = startWorld(d, cluster)
   for (const el of start?.elements ?? []) set(el, 'local', `in ${start!.name}'s terrain`)
   if (cluster) {
-    for (const w of worldsOf(d, cluster)) if (w !== start) for (const el of w.elements) set(el, 'off-world', `in ${w.name}'s terrain`)
+    for (const w of worldsOf(d, cluster))
+      if (w !== start) for (const el of w.elements) set(el, 'off-world', `in ${w.name}'s terrain`)
     const poiById = new Map(d.spacePois.map((p) => [p.id, p]))
     for (const placement of cluster.spacePois)
       for (const id of placement.pois) {
         const poi = poiById.get(id)
-        if (poi) for (const el of Object.keys(poi.elements)) set(el, 'space', `from ${label(d, id)} by rocket`)
+        if (poi)
+          for (const el of Object.keys(poi.elements))
+            set(el, 'space', `from ${label(d, id)} by rocket`)
       }
   }
 
   // Base game: every Starmap has every destination type somewhere, at some distance.
   for (const s of d.spaceDestinations ?? []) {
     const dlc = destinationDlc(s.id)
-    if (!s.visitable || dlc.requires.some((id) => !colony.dlcs.has(id)) || dlc.forbids.some((id) => colony.dlcs.has(id))) continue
+    if (
+      !s.visitable ||
+      dlc.requires.some((id) => !colony.dlcs.has(id)) ||
+      dlc.forbids.some((id) => colony.dlcs.has(id))
+    )
+      continue
     for (const el of Object.keys(s.elements)) set(el, 'space', `from the ${s.name} by rocket`)
     for (const tag of Object.keys(s.entities)) set(tag, 'space', `from the ${s.name} by rocket`)
   }
 
-  const usable = graph.processes.filter((p) => p.kind !== 'worldgen' && p.kind !== 'geyser' && p.kind !== 'starmap' && !isAvailable(p, colony))
+  const usable = graph.processes.filter(
+    (p) =>
+      p.kind !== 'worldgen' &&
+      p.kind !== 'geyser' &&
+      p.kind !== 'starmap' &&
+      !isAvailable(p, colony),
+  )
   let changed = true
   while (changed) {
     changed = false
@@ -161,12 +212,15 @@ export function computeTiers(d: GameData, graph: Graph, colony: Colony, cluster:
 
 function bestTier(tiers: (Tier | undefined)[]): Tier | undefined {
   let best: Tier | undefined
-  for (const t of tiers) if (t !== undefined && (best === undefined || TIER_ORDER[t] < TIER_ORDER[best])) best = t
+  for (const t of tiers)
+    if (t !== undefined && (best === undefined || TIER_ORDER[t] < TIER_ORDER[best])) best = t
   return best
 }
 
 function describe(d: GameData, p: Process, worst: Tier): string {
-  const from = p.inputs.map((i) => (i.anyOf ? `any of ${i.anyOf.length} foods` : label(d, i.tag))).join(' + ')
+  const from = p.inputs
+    .map((i) => (i.anyOf ? `any of ${i.anyOf.length} foods` : label(d, i.tag)))
+    .join(' + ')
   const basis = worst === 'renewable' ? 'renewable inputs' : `${from} (${TIER_LABEL[worst]})`
   switch (p.kind) {
     case 'diet':

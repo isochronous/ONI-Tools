@@ -1,5 +1,5 @@
 import type { DlcRestriction, GameData } from '../data/types'
-import { label } from '../data/load'
+import { label, unnamed } from '../data/load'
 
 /**
  * Every way the game turns things into other things, flattened into one shape. A process
@@ -57,7 +57,6 @@ export interface Process {
   outputs: Flow[]
   dlc: DlcRestriction
   needs: Needs
-  /** For crops and diets: wild version yields this fraction and needs no inputs. */
   /** Throughput of the wild variant relative to the tame one (notes only; kg-per-kg ratios do not change). */
   wildFactor?: number
   /** Human-readable qualifiers shown next to the step. */
@@ -156,7 +155,16 @@ export function buildGraph(d: GameData): Graph {
       } else {
         outputs.push({ tag: target, amount: 1 })
       }
-      add({ kind: 'transition', via: label(e.id), viaId: e.id, inputs: [{ tag: e.id, amount: 1 }], outputs, dlc, needs: {}, notes: [note] })
+      add({
+        kind: 'transition',
+        via: label(e.id),
+        viaId: e.id,
+        inputs: [{ tag: e.id, amount: 1 }],
+        outputs,
+        dlc,
+        needs: {},
+        notes: [note],
+      })
     }
     if (e.sublimate && elementIds.has(e.sublimate.id)) {
       add({
@@ -220,10 +228,6 @@ export function buildGraph(d: GameData): Graph {
     }
   }
 
-  // Fabricator recipes. Alternative ingredients become separate processes so a chain can
-  // name the one it uses. A "doNotConsume" ingredient is not a catalyst: the fabricator
-  // transfers its mass into the product (the Dehydrator's food becomes the dried food),
-  // so it is an input like any other.
   // Inputs named by a tag rather than a thing ("Compostable", "Filter") take any element or
   // item carrying that tag. The Composter's compostables are copies of the real items (the
   // "CompostX" prefabs a Duplicant marks for compost), so they are mapped back to the items.
@@ -235,7 +239,8 @@ export function buildGraph(d: GameData): Graph {
     for (const e of d.elements) if (!e.disabled && e.tags.includes(tag)) list.push(e.id)
     for (const it of d.items) {
       if (!it.tags.includes(tag)) continue
-      const base = it.id.startsWith('Compost') && itemIds.has(it.id.slice(7)) ? it.id.slice(7) : it.id
+      const base =
+        it.id.startsWith('Compost') && itemIds.has(it.id.slice(7)) ? it.id.slice(7) : it.id
       if (!list.includes(base)) list.push(base)
     }
     classes.set(tag, list)
@@ -245,13 +250,23 @@ export function buildGraph(d: GameData): Graph {
     if (elementIds.has(tag) || itemIds.has(tag)) return { tag, amount }
     const list = members(tag)
     if (list.length === 0) return { tag, amount }
-    return { tag: list[0]!, amount, anyOf: list.length > 1 ? list : undefined, anyOfName: CLASS_NAMES[tag] ?? tag.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase() }
+    return {
+      tag: list[0]!,
+      amount,
+      anyOf: list.length > 1 ? list : undefined,
+      anyOfName: CLASS_NAMES[tag] ?? tag.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase(),
+    }
   }
 
+  // Fabricator recipes. Alternative ingredients become separate processes so a chain can
+  // name the one it uses. A "doNotConsume" ingredient is not a catalyst: the fabricator
+  // transfers its mass into the product (the Dehydrator's food becomes the dried food),
+  // so it is an input like any other.
   const buildingDlc = new Map(d.buildings.map((b) => [b.id, b.dlc]))
   for (const r of d.recipes) {
     const combos = cartesian(r.ingredients.map((i) => i.options))
     for (const fab of r.fabricators) {
+      if (unnamed(d.names[fab] ?? '')) continue
       for (const combo of combos) {
         const extras: string[] = []
         if (r.radboltsIn) extras.push(`${r.radboltsIn} radbolts`)
@@ -270,8 +285,10 @@ export function buildGraph(d: GameData): Graph {
     }
   }
 
-  // Continuous converters: rates per second on both sides, normalised to per second.
+  // Continuous converters: rates per second on both sides, normalised to per second. A
+  // building the game has no name for is not in the build menu, so it cannot be used.
   for (const b of d.buildings) {
+    if (unnamed(b.name)) continue
     const inputs = b.inputs.map((f) => classInput(f.tag, f.rate ?? f.amountPerUse ?? 0))
     const outputs = b.outputs
       .map((f) => ({ tag: f.tag, amount: f.rate ?? f.amountPerUse ?? 0 }))
@@ -280,7 +297,9 @@ export function buildGraph(d: GameData): Graph {
     const perUse = b.outputs.some((f) => f.amountPerUse !== undefined)
     // An input the building only accepts hot enough (the Steam Turbine's 125 C steam): steam
     // straight off boiling water sits at the boiling point and has to be heated further.
-    const hot = b.inputs.filter((f) => f.minTemperatureK !== undefined).map((f) => `${label(f.tag)} at ${celsius(f.minTemperatureK!)} °C or hotter`)
+    const hot = b.inputs
+      .filter((f) => f.minTemperatureK !== undefined)
+      .map((f) => `${label(f.tag)} at ${celsius(f.minTemperatureK!)} °C or hotter`)
     add({
       kind: 'converter',
       via: b.name,
@@ -302,11 +321,19 @@ export function buildGraph(d: GameData): Graph {
     if (!c.adult) {
       // One process per (output, rate): a Pacu that eats thirty seeds alike is one step with
       // thirty alternative inputs, not thirty steps.
-      const groups = new Map<string, { produces: string; rate: number; caloriesPerKg: number; foods: string[] }>()
+      const groups = new Map<
+        string,
+        { produces: string; rate: number; caloriesPerKg: number; foods: string[] }
+      >()
       for (const diet of c.diet ?? []) {
         if (!diet.produces || diet.produces === 'Vacuum' || diet.produces === 'Void') continue
         const key = `${diet.produces}|${diet.producedPerKgEaten}|${diet.caloriesPerKg}`
-        const g = groups.get(key) ?? { produces: diet.produces, rate: diet.producedPerKgEaten, caloriesPerKg: diet.caloriesPerKg, foods: [] }
+        const g = groups.get(key) ?? {
+          produces: diet.produces,
+          rate: diet.producedPerKgEaten,
+          caloriesPerKg: diet.caloriesPerKg,
+          foods: [],
+        }
         for (const food of diet.eats) if (!g.foods.includes(food)) g.foods.push(food)
         groups.set(key, g)
       }
@@ -315,28 +342,69 @@ export function buildGraph(d: GameData): Graph {
           kind: 'diet',
           via: c.name,
           viaId: c.id,
-          inputs: [{ tag: g.foods[0]!, amount: 1, anyOf: g.foods.length > 1 ? g.foods : undefined }],
+          inputs: [
+            { tag: g.foods[0]!, amount: 1, anyOf: g.foods.length > 1 ? g.foods : undefined },
+          ],
           outputs: [{ tag: g.produces, amount: g.rate }],
           dlc: c.dlc,
           needs: { critter: c.id },
           wildFactor: d.tuning.wildCritterCalorieBurnRatio,
           notes: c.caloriesBurnedPerCycle
-            ? [`eats ${fmt(c.caloriesBurnedPerCycle / g.caloriesPerKg)} kg/cycle when tame, ${fmt((c.caloriesBurnedPerCycle * d.tuning.wildCritterCalorieBurnRatio) / g.caloriesPerKg)} wild`]
+            ? [
+                `eats ${fmt(c.caloriesBurnedPerCycle / g.caloriesPerKg)} kg/cycle when tame, ${fmt((c.caloriesBurnedPerCycle * d.tuning.wildCritterCalorieBurnRatio) / g.caloriesPerKg)} wild`,
+              ]
             : [],
         })
       }
     }
     for (const drop of c.adult ? [] : (c.deathDrops ?? [])) {
-      add({ kind: 'drop', via: c.name, viaId: c.id, inputs: [{ tag: c.id, amount: 1 }], outputs: [{ tag: drop.tag, amount: drop.count }], dlc: c.dlc, needs: { critter: c.id }, notes: ['on death'] })
+      add({
+        kind: 'drop',
+        via: c.name,
+        viaId: c.id,
+        inputs: [{ tag: c.id, amount: 1 }],
+        outputs: [{ tag: drop.tag, amount: drop.count }],
+        dlc: c.dlc,
+        needs: { critter: c.id },
+        notes: ['on death'],
+      })
     }
     if (c.egg && c.cyclesPerEgg) {
-      add({ kind: 'egg', via: c.name, viaId: c.id, inputs: [], outputs: [{ tag: c.egg, amount: 1 }], dlc: c.dlc, needs: { critter: c.id }, notes: [`one every ${fmt(c.cyclesPerEgg)} cycles when tame and fed`], wildFactor: d.tuning.wildCritterGrowthModifier })
+      add({
+        kind: 'egg',
+        via: c.name,
+        viaId: c.id,
+        inputs: [],
+        outputs: [{ tag: c.egg, amount: 1 }],
+        dlc: c.dlc,
+        needs: { critter: c.id },
+        notes: [`one every ${fmt(c.cyclesPerEgg)} cycles when tame and fed`],
+        wildFactor: d.tuning.wildCritterGrowthModifier,
+      })
     }
     if (c.growDrop) {
-      add({ kind: 'grow', via: c.name, viaId: c.id, inputs: [], outputs: [{ tag: c.growDrop, amount: 1 }], dlc: c.dlc, needs: { critter: c.id }, notes: ['when it grows up'] })
+      add({
+        kind: 'grow',
+        via: c.name,
+        viaId: c.id,
+        inputs: [],
+        outputs: [{ tag: c.growDrop, amount: 1 }],
+        dlc: c.dlc,
+        needs: { critter: c.id },
+        notes: ['when it grows up'],
+      })
     }
     if (c.shear) {
-      add({ kind: 'shear', via: c.name, viaId: c.id, inputs: [], outputs: [{ tag: c.shear.item, amount: 1 }], dlc: c.dlc, needs: { critter: c.id, extras: ['in ' + label(c.shear.atmosphere)] }, notes: ['grows scales to shear'] })
+      add({
+        kind: 'shear',
+        via: c.name,
+        viaId: c.id,
+        inputs: [],
+        outputs: [{ tag: c.shear.item, amount: 1 }],
+        dlc: c.dlc,
+        needs: { critter: c.id, extras: ['in ' + label(c.shear.atmosphere)] },
+        notes: ['grows scales to shear'],
+      })
     }
   }
 
@@ -345,13 +413,19 @@ export function buildGraph(d: GameData): Graph {
     if (p.crop) {
       const cycles = p.crop.durationSeconds / d.tuning.secondsPerCycle
       const inputs: Flow[] = []
-      for (const f of [...(p.irrigation ?? []), ...(p.fertilizer ?? [])]) inputs.push({ tag: f.tag, amount: f.rate * p.crop.durationSeconds })
+      for (const f of [...(p.irrigation ?? []), ...(p.fertilizer ?? [])])
+        inputs.push({ tag: f.tag, amount: f.rate * p.crop.durationSeconds })
       const extras: string[] = []
       if (p.branches) extras.push(`across up to ${p.branches} vines on one plant`)
       if (p.needsPollination) extras.push('needs pollination (Mimika, Sweetle, or Grubgrub)')
       // A Mimika's visit speeds growth for a while; one keeps a handful of plants going.
       const pollination = d.tuning.pollination
-      const boost = pollination && p.crop.item !== 'Butterfly' ? [`+${fmt(pollination.growthBonus * 100)}% growth while a Mimika pollinates it (one Mimika keeps up to ${Math.floor(pollination.effectSeconds / pollination.searchCooldownSeconds)} plants going)`] : []
+      const boost =
+        pollination && p.crop.item !== 'Butterfly'
+          ? [
+              `+${fmt(pollination.growthBonus * 100)}% growth while a Mimika pollinates it (one Mimika keeps up to ${Math.floor(pollination.effectSeconds / pollination.searchCooldownSeconds)} plants going)`,
+            ]
+          : []
       add({
         kind: 'crop',
         via: p.name,
@@ -378,23 +452,59 @@ export function buildGraph(d: GameData): Graph {
         seconds: p.crop.durationSeconds / wild,
       })
       if (p.skilledHarvestBonus) {
-        add({ kind: 'harvest-bonus', via: p.name, viaId: p.id, inputs: [], outputs: [{ tag: p.skilledHarvestBonus.tag, amount: p.skilledHarvestBonus.amount }], dlc: p.dlc, needs: { plant: p.id }, notes: ['when harvested by a skilled Duplicant'] })
+        add({
+          kind: 'harvest-bonus',
+          via: p.name,
+          viaId: p.id,
+          inputs: [],
+          outputs: [{ tag: p.skilledHarvestBonus.tag, amount: p.skilledHarvestBonus.amount }],
+          dlc: p.dlc,
+          needs: { plant: p.id },
+          notes: ['when harvested by a skilled Duplicant'],
+        })
       }
     }
     if (p.seed && p.seed.count > 0) {
-      add({ kind: 'seed', via: p.name, viaId: p.id, inputs: [], outputs: [{ tag: p.seed.item, amount: p.seed.count }], dlc: p.dlc, needs: { plant: p.id }, notes: [p.seed.productionType.toLowerCase()] })
+      add({
+        kind: 'seed',
+        via: p.name,
+        viaId: p.id,
+        inputs: [],
+        outputs: [{ tag: p.seed.item, amount: p.seed.count }],
+        dlc: p.dlc,
+        needs: { plant: p.id },
+        notes: [p.seed.productionType.toLowerCase()],
+      })
     }
   }
 
   // Sources.
   for (const g of d.geysers) {
     if (!elementIds.has(g.element)) continue
-    add({ kind: 'geyser', via: label(g.id) === g.id ? label(g.element) + ' geyser' : label(g.id), viaId: g.id, inputs: [], outputs: [{ tag: g.element, amount: (g.minRatePerCycle + g.maxRatePerCycle) / 2 }], dlc: g.dlc, needs: {}, notes: [`${fmt(g.minRatePerCycle)}–${fmt(g.maxRatePerCycle)} kg/cycle average`] })
+    add({
+      kind: 'geyser',
+      via: d.names[g.id] ?? label(g.element) + ' geyser',
+      viaId: g.id,
+      inputs: [],
+      outputs: [{ tag: g.element, amount: (g.minRatePerCycle + g.maxRatePerCycle) / 2 }],
+      dlc: g.dlc,
+      needs: {},
+      notes: [`${fmt(g.minRatePerCycle)}–${fmt(g.maxRatePerCycle)} kg/cycle average`],
+    })
   }
   for (const w of d.worldgen) {
     for (const el of w.elements) {
       if (!elementIds.has(el)) continue
-      add({ kind: 'worldgen', via: worldName(w.name), viaId: w.world, inputs: [], outputs: [{ tag: el, amount: 1 }], dlc: w.dlc, needs: {}, notes: ['in the terrain'] })
+      add({
+        kind: 'worldgen',
+        via: worldName(w.name),
+        viaId: w.world,
+        inputs: [],
+        outputs: [{ tag: el, amount: 1 }],
+        dlc: w.dlc,
+        needs: {},
+        notes: ['in the terrain'],
+      })
     }
   }
   // Base game only: the Starmap's destinations. Cargo is split between a destination's
@@ -404,10 +514,32 @@ export function buildGraph(d: GameData): Graph {
     const dlc = destinationDlc(s.id)
     const elements = Object.keys(s.elements).filter((el) => elementIds.has(el))
     const share = elements.length ? `about 1/${elements.length} of each cargo load` : ''
-    const recharge = s.cyclesToRecover ? `${fmt(s.massToRecover)} kg restored over ${s.cyclesToRecover} cycles` : ''
+    const recharge = s.cyclesToRecover
+      ? `${fmt(s.massToRecover)} kg restored over ${s.cyclesToRecover} cycles`
+      : ''
     const notes = [share, recharge].filter(Boolean)
-    for (const el of elements) add({ kind: 'starmap', via: s.name, viaId: s.id, inputs: [], outputs: [{ tag: el, amount: 1 }], dlc, needs: {}, notes })
-    for (const [tag, count] of Object.entries(s.entities)) add({ kind: 'starmap', via: s.name, viaId: s.id, inputs: [], outputs: [{ tag, amount: count }], dlc, needs: {}, notes: [`${count} per trip`] })
+    for (const el of elements)
+      add({
+        kind: 'starmap',
+        via: s.name,
+        viaId: s.id,
+        inputs: [],
+        outputs: [{ tag: el, amount: 1 }],
+        dlc,
+        needs: {},
+        notes,
+      })
+    for (const [tag, count] of Object.entries(s.entities))
+      add({
+        kind: 'starmap',
+        via: s.name,
+        viaId: s.id,
+        inputs: [],
+        outputs: [{ tag, amount: count }],
+        dlc,
+        needs: {},
+        notes: [`${count} per trip`],
+      })
   }
 
   const byOutput = new Map<string, Process[]>()
@@ -427,14 +559,21 @@ function push(map: Map<string, Process[]>, key: string, p: Process) {
 }
 
 function cartesian<T>(lists: T[][]): T[][] {
-  return lists.reduce<T[][]>((acc, list) => acc.flatMap((prefix) => list.map((x) => [...prefix, x])), [[]])
+  return lists.reduce<T[][]>(
+    (acc, list) => acc.flatMap((prefix) => list.map((x) => [...prefix, x])),
+    [[]],
+  )
 }
 
 /** Until a dump resolves them, some world names arrive as string keys ("STRINGS.WORLDS.MINIBASE.NAME"). */
 function worldName(name: string): string {
   const m = /^STRINGS\.WORLDS\.(\w+)\.NAME$/.exec(name)
   if (!m || !m[1]) return name
-  return m[1].toLowerCase().split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+  return m[1]
+    .toLowerCase()
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
 }
 
 function celsius(kelvin: number): string {

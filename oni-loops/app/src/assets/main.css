@@ -1,13 +1,28 @@
+/*
+ * Colours borrow from the game's own screens: slate panels over the dark of space, the
+ * oxygen overlay's teal for anything that does work, the heat overlay's amber for anything
+ * that should give the player pause, and a soft green for a loop that pays back.
+ */
 :root {
-  --bg: #16191f;
-  --panel: #1f242c;
-  --hover: #2a313b;
-  --border: #323a46;
-  --text: #e6e9ee;
-  --muted: #8f99a8;
-  --accent: #6cc4ff;
-  --good: #5fd38d;
-  --warn: #f2b24a;
+  --bg: #141a21;
+  --panel: #1c242d;
+  --raised: #243040;
+  --border: #2f3a47;
+  --border-strong: #3f4d5e;
+  --text: #e9edf1;
+  --muted: #94a1b0;
+  --faint: #6b7784;
+  --accent: #5fc8c0;
+  --accent-ink: #0f1a1a;
+  --good: #8ad17f;
+  --good-dim: rgba(138, 209, 127, 0.14);
+  --warn: #e9a23b;
+  --warn-dim: rgba(233, 162, 59, 0.14);
+  --rail: #3f4d5e;
+  --focus: #9fe3dd;
+  --radius-control: 6px;
+  --radius-card: 12px;
+  --measure: 72ch;
   color-scheme: dark;
 }
 
@@ -20,21 +35,118 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  line-height: 1.45;
+  font-family: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
-  max-width: 1200px;
+  max-width: 1560px;
   margin: 0 auto;
-  padding: 1.25rem 1rem 2rem;
+  padding: 1.25rem 1.25rem 3rem;
 }
 
 a {
   color: var(--accent);
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Amounts line up when the digits do. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Small heading over a group of controls or rows: sentence case, quiet, no tracking. */
+.eyebrow {
+  margin: 0 0 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.hint {
+  font-size: 0.875rem;
+  color: var(--muted);
+  max-width: var(--measure);
+}
+
+/* A plain text button. */
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 120ms;
+}
+.link:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Rounded tag for an amount of something, tinted by how hard it is to get. */
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: var(--raised);
+  border: 1px solid transparent;
+  color: var(--text);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.chip .tier {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.chip.plus {
+  background: var(--good-dim);
+}
+.chip.t-off-world {
+  border-color: var(--border-strong);
+}
+.chip.t-space,
+.chip.t-none {
+  border-color: var(--warn);
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }

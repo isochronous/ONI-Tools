@@ -2,14 +2,15 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ColonyPanel from '../components/ColonyPanel.vue'
+import FilterBar from '../components/FilterBar.vue'
 import LoopCard from '../components/LoopCard.vue'
 import ProcessList from '../components/ProcessList.vue'
 import TargetPicker from '../components/TargetPicker.vue'
-import { label } from '../data/load'
+import { gameData, label } from '../data/load'
 import { useGraph } from '../model'
-import { answer } from '../model/search'
+import { facetsOf, loopKeys, passes, processKeys } from '../model/filters'
+import { answer, effectiveRatio, type Loop } from '../model/search'
 import { computeTiers, TIER_LABEL } from '../model/tiers'
-import { gameData } from '../data/load'
 import { useColonyStore } from '../stores/colony'
 
 const route = useRoute()
@@ -17,73 +18,226 @@ const router = useRouter()
 const store = useColonyStore()
 const graph = useGraph()
 
-const target = computed<string | null>(() => (typeof route.query.t === 'string' && route.query.t) || null)
+const target = computed<string | null>(
+  () => (typeof route.query.t === 'string' && route.query.t) || null,
+)
 
 function setTarget(tag: string) {
   router.push({ query: { ...route.query, t: tag } })
 }
 
-const tiers = computed(() => computeTiers(gameData, graph, store.colony, store.clusterData, store.geysers))
-const result = computed(() => (target.value ? answer(graph, target.value, store.colony, tiers.value) : null))
-const lockedReasons = computed(() => new Map(result.value?.locked.map((l) => [l.process.id, l.reason]) ?? []))
-const primaryLoops = computed(() => result.value?.loops.filter((l) => l.primary) ?? [])
-const sideLoops = computed(() => result.value?.loops.filter((l) => !l.primary) ?? [])
-const showSide = ref(false)
-watch(target, () => (showSide.value = false))
+watch(
+  target,
+  (t) => {
+    document.title = t ? `${label(t)} · ONI Loops` : 'ONI Loops'
+  },
+  { immediate: true },
+)
 
-watch(target, (t) => {
-  document.title = t ? `${label(t)} · ONI Loops` : 'ONI Loops'
-}, { immediate: true })
+// What the colony has decides the answer; everything below only hides parts of it.
+const tiers = computed(() =>
+  computeTiers(gameData, graph, store.colony, store.clusterData, store.geysers),
+)
+const result = computed(() =>
+  target.value ? answer(graph, target.value, store.colony, tiers.value) : null,
+)
+const facets = computed(() => (result.value ? facetsOf(result.value) : []))
+
+const aboveFloor = computed(
+  () => result.value?.loops.filter((l) => effectiveRatio(l) >= store.loopFloor - 1e-9) ?? [],
+)
+const belowFloor = computed(() => (result.value?.loops.length ?? 0) - aboveFloor.value.length)
+const shownLoops = computed(() =>
+  result.value
+    ? aboveFloor.value.filter((l) => passes(loopKeys(l, result.value!.target), store.hidden))
+    : [],
+)
+const filteredLoops = computed(() => aboveFloor.value.length - shownLoops.value.length)
+const primaryLoops = computed(() => shownLoops.value.filter((l) => l.primary))
+const sideLoops = computed(() => shownLoops.value.filter((l) => !l.primary))
+
+const shownProducers = computed(() =>
+  result.value
+    ? result.value.producers.filter((p) =>
+        passes(processKeys(p, result.value!.target), store.hidden),
+      )
+    : [],
+)
+const shownLocked = computed(() =>
+  result.value
+    ? result.value.locked.filter((l) =>
+        passes(processKeys(l.process, result.value!.target), store.hidden),
+      )
+    : [],
+)
+const filteredSources = computed(() =>
+  result.value
+    ? result.value.producers.length +
+      result.value.locked.length -
+      shownProducers.value.length -
+      shownLocked.value.length
+    : 0,
+)
+const lockedReasons = computed(
+  () => new Map(shownLocked.value.map((l) => [l.process.id, l.reason])),
+)
+
+/** Cards are tall, so the list grows a page at a time. */
+const PAGE = 8
+const shownPrimary = ref(PAGE)
+const showSide = ref(false)
+watch([target, () => store.hidden, () => store.loopFloor], () => {
+  shownPrimary.value = PAGE
+  showSide.value = false
+})
+const pagedPrimary = computed(() => primaryLoops.value.slice(0, shownPrimary.value))
+const morePrimary = computed(() => primaryLoops.value.length - pagedPrimary.value.length)
+
+/** Stable identity for a loop across recomputes, so a card keeps its chosen return. */
+function loopKey(loop: Loop): string {
+  return loop.steps.map((s) => s.process.id).join('>')
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
 </script>
 
 <template>
   <div class="layout">
-    <aside>
+    <aside class="colony">
       <ColonyPanel />
     </aside>
-    <main>
+
+    <main class="main">
       <TargetPicker :model-value="target" @update:model-value="setTarget" />
 
       <template v-if="result">
-        <section class="block">
-          <h2>
-            Loops
-            <small v-if="result.hiddenCycles">{{ result.hiddenCycles }} below your floor hidden</small>
-          </h2>
+        <header class="target">
+          <h1>{{ label(result.target) }}</h1>
           <p class="tier-line">
-            {{ label(result.target) }} is <strong>{{ TIER_LABEL[tiers.of(result.target)] }}</strong> for your colony: {{ tiers.reason(result.target) }}.
+            <strong>{{ TIER_LABEL[tiers.of(result.target)] }}</strong> for your colony:
+            {{ tiers.reason(result.target) }}.
           </p>
-          <p v-if="!result.loops.length" class="empty">No cycle brings {{ label(result.target) }} back at or above your floor with what your colony has.</p>
-          <p v-else-if="!primaryLoops.length" class="empty">No loop where {{ label(result.target) }} is the main flow; only side-stream loops below.</p>
+        </header>
+
+        <FilterBar
+          :facets="facets"
+          :hidden="store.hidden"
+          :hidden-loops="filteredLoops"
+          :hidden-sources="filteredSources"
+          @toggle="store.toggleHidden"
+          @clear="store.clearHidden"
+        />
+
+        <section class="block">
+          <div class="block-head">
+            <h2>Loops back to {{ label(result.target) }}</h2>
+            <label class="floor">
+              <span
+                >Show loops that return at least
+                <strong class="num">{{ Math.round(store.loopFloor * 100) }}%</strong></span
+              >
+              <input v-model.number="store.loopFloor" type="range" min="0" max="1" step="0.05" />
+            </label>
+          </div>
+          <p class="meta">
+            <template v-if="result.loops.length === 0"
+              >No cycle brings {{ label(result.target) }} back to itself with what your colony
+              has.</template
+            >
+            <template v-else>
+              {{ plural(shownLoops.length, 'loop') }} shown<template v-if="belowFloor"
+                >, {{ belowFloor }} below your floor</template
+              ><template v-if="filteredLoops">, {{ filteredLoops }} switched off above</template>.
+              <template v-if="shownLoops.length && !primaryLoops.length">
+                All of them are side-streams, where {{ label(result.target) }} only rides along a
+                machine that mostly eats something else.</template
+              >
+              <template v-else-if="shownLoops.length">
+                A loop short of ×1 is driven back to ×1 by adding more of an intermediate you can
+                get anyway; the card says how much.</template
+              >
+            </template>
+          </p>
           <div class="loops">
-            <LoopCard v-for="(loop, i) in primaryLoops" :key="'p' + i" :loop="loop" :target="result.target" :tiers="tiers" />
+            <LoopCard
+              v-for="loop in pagedPrimary"
+              :key="loopKey(loop)"
+              :loop="loop"
+              :target="result.target"
+              :tiers="tiers"
+            />
           </div>
-          <p v-if="sideLoops.length" class="side-toggle">
-            <button class="link" @click="showSide = !showSide">{{ showSide ? 'Hide' : 'Show' }} {{ sideLoops.length }} side-stream loop{{ sideLoops.length === 1 ? '' : 's' }}</button>
-            <small>where {{ label(result.target) }} only rides along a machine that mostly eats something else</small>
+          <p v-if="morePrimary" class="more">
+            <button type="button" class="more-button" @click="shownPrimary += PAGE">
+              Show {{ Math.min(PAGE, morePrimary) }} more
+            </button>
+            <button type="button" class="link" @click="shownPrimary = primaryLoops.length">
+              Show all {{ morePrimary }}
+            </button>
           </p>
-          <div v-if="showSide" class="loops">
-            <LoopCard v-for="(loop, i) in sideLoops" :key="'s' + i" :loop="loop" :target="result.target" :tiers="tiers" />
-          </div>
+          <template v-if="sideLoops.length">
+            <p class="side-toggle">
+              <button type="button" class="link" @click="showSide = !showSide">
+                {{ showSide ? 'Hide' : 'Show' }} {{ plural(sideLoops.length, 'side-stream loop') }}
+              </button>
+              <span class="hint"
+                >where {{ label(result.target) }} is only a small part of what one step eats</span
+              >
+            </p>
+            <div v-if="showSide" class="loops">
+              <LoopCard
+                v-for="loop in sideLoops"
+                :key="loopKey(loop)"
+                :loop="loop"
+                :target="result.target"
+                :tiers="tiers"
+              />
+            </div>
+          </template>
         </section>
 
         <section class="block">
-          <h2>Ways to get {{ label(result.target) }}</h2>
-          <p v-if="!result.producers.length" class="empty">
-            Nothing your colony has makes or contains {{ label(result.target) }}.
-            <template v-if="!result.locked.length">The game defines no source for it at all.</template>
+          <div class="block-head">
+            <h2>Ways to get {{ label(result.target) }}</h2>
+          </div>
+          <p v-if="!shownProducers.length" class="meta">
+            <template v-if="result.producers.length">Every source is switched off above.</template>
+            <template v-else>
+              Nothing your colony has makes or contains {{ label(result.target) }}.
+              <template v-if="!result.locked.length">
+                The game defines no source for it at all.</template
+              >
+            </template>
           </p>
-          <ProcessList :processes="result.producers" :target="result.target" :tiers="tiers" />
+          <ProcessList :processes="shownProducers" :target="result.target" :tiers="tiers" />
         </section>
 
-        <section v-if="result.locked.length" class="block">
-          <h2>One step away</h2>
-          <ProcessList :processes="result.locked.map((l) => l.process)" :target="result.target" :reasons="lockedReasons" :tiers="tiers" />
+        <section v-if="shownLocked.length" class="block">
+          <div class="block-head">
+            <h2>One step away</h2>
+          </div>
+          <p class="meta">Sources that need a DLC or a critter your colony does not have.</p>
+          <ProcessList
+            :processes="shownLocked.map((l) => l.process)"
+            :target="result.target"
+            :reasons="lockedReasons"
+            :tiers="tiers"
+          />
         </section>
       </template>
-      <p v-else class="intro">
-        Pick something you want more of. You get every way the game can produce it with what your colony has, and any loop that brings it back to itself, net-positive loops first.
-      </p>
+
+      <div v-else class="intro">
+        <p>
+          Pick something you want more of. You get every way the game can make it with what your
+          colony has, and every loop that brings it back to itself, the easiest to run first.
+        </p>
+        <p>
+          Set up your colony on the left so the answers match your game: which DLCs, which asteroid,
+          which geysers you have found, which critters you can ranch.
+        </p>
+      </div>
     </main>
   </div>
 </template>
@@ -91,57 +245,106 @@ watch(target, (t) => {
 <style scoped>
 .layout {
   display: grid;
-  grid-template-columns: 18rem 1fr;
+  grid-template-columns: 20rem minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
 }
-@media (max-width: 800px) {
+.colony {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+.main {
+  display: grid;
+  gap: 1.5rem;
+  max-width: 1100px;
+}
+@media (max-width: 960px) {
   .layout {
     grid-template-columns: 1fr;
   }
+  .colony {
+    position: static;
+    max-height: none;
+    order: 2;
+  }
 }
-main {
-  display: grid;
-  gap: 1.5rem;
+
+.target h1 {
+  margin: 0;
+  font-size: 2.25rem;
+  font-weight: 700;
+}
+.tier-line {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  max-width: var(--measure);
+}
+.tier-line strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
 }
 .block h2 {
-  font-size: 1.1rem;
-  margin: 0 0 0.6rem;
-  display: flex;
-  gap: 0.8rem;
-  align-items: baseline;
+  margin: 0;
+  font-size: 1.375rem;
 }
-.block h2 small {
-  font-size: 0.8rem;
-  font-weight: 400;
+.floor {
+  display: grid;
+  gap: 0.15rem;
+  width: min(100%, 22rem);
+  font-size: 0.875rem;
   color: var(--muted);
+}
+.floor strong {
+  color: var(--text);
+}
+.meta {
+  margin: 0.4rem 0 0.9rem;
+  color: var(--muted);
+  max-width: var(--measure);
 }
 .loops {
   display: grid;
-  gap: 0.8rem;
+  gap: 1rem;
 }
-.empty,
-.intro,
-.tier-line {
-  color: var(--muted);
+.more {
+  margin: 1rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
 }
-.tier-line {
-  margin: -0.2rem 0 0.8rem;
+.more-button {
+  padding: 0.45rem 1rem;
+  background: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.more-button:hover {
+  border-color: var(--accent);
 }
 .side-toggle {
-  margin: 0.6rem 0;
+  margin: 1rem 0;
   display: flex;
-  gap: 0.6rem;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
   align-items: baseline;
-  color: var(--muted);
-  font-size: 0.85rem;
 }
-.link {
-  background: none;
-  border: none;
-  color: var(--accent);
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
+.intro {
+  display: grid;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 1.0625rem;
+  max-width: var(--measure);
 }
 </style>

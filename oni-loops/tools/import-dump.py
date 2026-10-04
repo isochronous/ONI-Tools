@@ -1,12 +1,17 @@
-"""Copy the game's oni-data-dump.json into data/<build>.json, stripping Klei's rich-text
-markup from every string (link, colour, italics tags) so the app never sees it.
+"""Copy the game's oni-data-dump.<flavour>.json into data/<build>-<flavour>.json, stripping
+Klei's rich-text markup from every string (link, colour, italics tags) so the app never sees
+it. When the dump's icon folder is next to it, its PNGs are copied to app/public/icons and the
+tags they cover are listed in data/icons.json.
 
-    python tools/import-dump.py [path-to-oni-data-dump.json]
+    python tools/import-dump.py [path-to-oni-data-dump.json] [--no-icons]
 """
-import json, os, re, sys
+import json, os, re, shutil, sys
 
 TAGS = re.compile(r"<[^>]+>")
-src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.expanduser("~"), "Documents", "Klei", "OxygenNotIncluded", "oni-data-dump.json")
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+klei = os.path.join(os.path.expanduser("~"), "Documents", "Klei", "OxygenNotIncluded")
+src = args[0] if args else os.path.join(klei, "oni-data-dump.json")
+root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def clean(v):
     if isinstance(v, str):
@@ -35,6 +40,27 @@ else:
 # without Spaced Out, so they are dropped from a Spaced Out dump.
 if "EXPANSION1_ID" in active:
     d["spaceDestinations"] = []
-out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "%s-%s.json" % (build, flavour))
+out = os.path.join(root, "data", "%s-%s.json" % (build, flavour))
 json.dump(d, open(out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
 print("wrote", out, os.path.getsize(out) // 1024, "KB; names like:", d["names"]["PlantFiber"], "/", d["dlcs"][0]["name"])
+
+# Icons: one folder per dump run, the same for every flavour, so the latest run wins.
+icons = os.path.join(os.path.dirname(os.path.abspath(src)), "oni-data-dump.icons")
+if "--no-icons" not in sys.argv and os.path.isdir(icons):
+    dest = os.path.join(root, "app", "public", "icons")
+    exported = set(json.load(open(os.path.join(icons, "index.json"), encoding="utf-8")))
+    # Only what the app can show: elements, things some conversion mentions, and the
+    # buildings, critters, and plants that do the converting. The dump exports every prefab.
+    body = json.dumps({k: v for k, v in d.items() if k not in ("items", "names", "elements")})
+    wanted = {e["id"] for e in d["elements"] if not e["disabled"]}
+    wanted |= {b["id"] for b in d["buildings"]} | {f for r in d["recipes"] for f in r["fabricators"]}
+    wanted |= {c["id"] for c in d["critters"]} | {p["id"] for p in d["plants"]}
+    wanted |= {it["id"] for it in d["items"] if '"%s"' % it["id"] in body}
+    tags = sorted(wanted & exported)
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
+    os.makedirs(dest)
+    for tag in tags:
+        shutil.copyfile(os.path.join(icons, tag + ".png"), os.path.join(dest, tag + ".png"))
+    json.dump(sorted(tags), open(os.path.join(root, "data", "icons.json"), "w", encoding="utf-8"))
+    print("copied", len(tags), "of", len(exported), "icons to", dest, "; wanted but missing:", sorted(wanted - exported)[:40], len(wanted - exported))

@@ -4,8 +4,14 @@ import { label } from '../data/load'
 import { fmt, type Flow, type Process, type ProcessKind } from '../model/graph'
 import { qty, unitOf, useGraph } from '../model'
 import { TIER_LABEL, TIER_ORDER, type Tier, type Tiers } from '../model/tiers'
+import TagIcon from './TagIcon.vue'
 
-const props = defineProps<{ processes: Process[]; target: string; reasons?: Map<string, string>; tiers: Tiers }>()
+const props = defineProps<{
+  processes: Process[]
+  target: string
+  reasons?: Map<string, string>
+  tiers: Tiers
+}>()
 const graph = useGraph()
 
 /** One row per distinct conversion; critter morphs with the same diet share a row. */
@@ -26,7 +32,7 @@ const KIND_TITLES: Record<ProcessKind, string> = {
   crop: 'Grown',
   seed: 'Seeds from plants',
   'harvest-bonus': 'Bonus on skilled harvests',
-  transition: 'Phase change (heating or cooling in-world)',
+  transition: 'Phase change, by heating or cooling in-world',
   sublimate: 'Off-gassing',
   rot: 'Spoiling and decomposing',
   geyser: 'Geysers and vents',
@@ -39,32 +45,48 @@ const groups = computed(() => {
   for (const p of props.processes) {
     const rows = map.get(p.kind) ?? new Map<string, Row>()
     map.set(p.kind, rows)
-    const sig = [p.kind, JSON.stringify(p.inputs), JSON.stringify(p.outputs), p.notes.join('|'), props.reasons?.get(p.id) ?? ''].join('#')
+    const sig = [
+      p.kind,
+      JSON.stringify(p.inputs),
+      JSON.stringify(p.outputs),
+      p.notes.join('|'),
+      props.reasons?.get(p.id) ?? '',
+    ].join('#')
     const row = rows.get(sig)
     if (row) {
       if (!row.via.split(', ').includes(p.via)) row.via += ', ' + p.via
     } else rows.set(sig, { id: p.id, via: p.via, p })
   }
-  return [...map.entries()].map(([kind, rows]) => [kind, [...rows.values()]] as const)
+  return [...map.entries()].map(([kind, rows]) => ({ kind, rows: [...rows.values()] }))
 })
 
-/** "any seed (31 kinds)" for an any-of input, else the item's name. */
+/** "any seed (31 kinds)" for an any-of input, else the amount and name. */
 function inputText(f: Flow): string {
   if (!f.anyOf) return qty(f.amount, f.tag)
   const kinds = new Set(f.anyOf.map((t) => graph.kinds.get(t) ?? 'item'))
-  const what = f.anyOfName ? `any ${f.anyOfName}` : kinds.size === 1 ? `any ${[...kinds][0]}` : 'any of these'
+  const what = f.anyOfName
+    ? `any ${f.anyOfName}`
+    : kinds.size === 1
+      ? `any ${[...kinds][0]}`
+      : 'any of these'
   return `${fmt(f.amount)}${unitOf(f.tag)} ${what} (${f.anyOf.length} kinds)`
 }
 
 function inputTitle(f: Flow): string {
   const tier = inputTier(f)
   const names = f.anyOf ? f.anyOf.map((t) => label(t)).join(', ') : ''
-  return TIER_LABEL[tier] + ': ' + props.tiers.reason(f.anyOf ? bestOf(f.anyOf) : f.tag) + (names ? ' · ' + names : '')
+  return (
+    TIER_LABEL[tier] +
+    ': ' +
+    props.tiers.reason(f.anyOf ? bestOf(f.anyOf) : f.tag) +
+    (names ? '. ' + names : '')
+  )
 }
 
 function bestOf(tags: string[]): string {
   let best = tags[0]!
-  for (const t of tags) if (TIER_ORDER[props.tiers.of(t)] < TIER_ORDER[props.tiers.of(best)]) best = t
+  for (const t of tags)
+    if (TIER_ORDER[props.tiers.of(t)] < TIER_ORDER[props.tiers.of(best)]) best = t
   return best
 }
 
@@ -77,34 +99,55 @@ function amountOf(p: Process, tag: string): number {
 }
 
 function unit(p: Process): string {
-  if (p.kind === 'converter') return p.notes.includes('per use') ? 'per use' : '/s'
-  if (p.kind === 'geyser') return '/cycle'
+  if (p.kind === 'converter') return p.notes.includes('per use') ? ' per use' : ' per second'
+  if (p.kind === 'geyser') return ' per cycle'
   return ''
+}
+
+function notes(p: Process): string[] {
+  return [...p.notes, ...(p.needs.extras ?? [])]
 }
 </script>
 
 <template>
   <div class="groups">
-    <section v-for="[kind, list] in groups" :key="kind">
-      <h3>{{ KIND_TITLES[kind] }}</h3>
+    <section v-for="g in groups" :key="g.kind" class="group">
+      <h3>{{ KIND_TITLES[g.kind] }}</h3>
       <ul>
-        <li v-for="{ id, via, p } in list" :key="id">
-          <template v-if="kind === 'worldgen' || kind === 'starmap'">
-            <span class="via">{{ via }}</span>
-            <span v-if="kind === 'starmap'" class="notes">{{ p.notes.join(' · ') }}</span>
+        <li v-for="{ id, via, p } in g.rows" :key="id" class="row">
+          <span class="via"
+            ><TagIcon
+              v-if="p.needs.building || p.needs.critter || p.needs.plant"
+              :tag="p.needs.building ?? p.needs.critter ?? p.needs.plant!"
+            />{{ via }}</span
+          >
+          <template v-if="g.kind === 'worldgen' || g.kind === 'starmap'">
+            <span class="flow"
+              ><span class="note" v-for="n in p.notes" :key="n">{{ n }}</span></span
+            >
           </template>
           <template v-else>
-            <span class="via">{{ via }}</span>
-            <span class="io">
+            <span class="flow">
               <template v-if="p.inputs.length">
-                <span v-for="(f, i) in p.inputs" :key="f.tag" :class="'t-' + inputTier(f)" :title="inputTitle(f)">{{ i ? ' + ' : '' }}{{ inputText(f) }}</span>
-                <span class="arrow"> → </span>
+                <template v-for="(f, i) in p.inputs" :key="f.tag">
+                  <span v-if="i" class="plus">+</span>
+                  <span class="num" :class="'t-' + inputTier(f)" :title="inputTitle(f)"
+                    ><TagIcon v-if="!f.anyOf" :tag="f.tag" />{{ inputText(f) }}</span
+                  >
+                </template>
+                <span class="arrow" aria-hidden="true">→</span>
               </template>
-              <strong>{{ qty(amountOf(p, target), target) }}{{ unit(p) }}</strong>
-              <span v-for="f in p.outputs.filter((o) => o.tag !== target)" :key="f.tag" class="extra"> + {{ qty(f.amount, f.tag) }}</span>
+              <strong class="num gives"
+                ><TagIcon :tag="target" />{{ qty(amountOf(p, target), target)
+                }}{{ unit(p) }}</strong
+              >
+              <template v-for="f in p.outputs.filter((o) => o.tag !== target)" :key="f.tag">
+                <span class="plus">+</span>
+                <span class="extra num"><TagIcon :tag="f.tag" />{{ qty(f.amount, f.tag) }}</span>
+              </template>
             </span>
-            <span v-if="p.notes.length || p.needs.extras?.length" class="notes">
-              {{ [...p.notes, ...(p.needs.extras ?? [])].join(' · ') }}
+            <span v-if="notes(p).length" class="notes">
+              <span v-for="n in notes(p)" :key="n" class="note">{{ n }}</span>
             </span>
           </template>
           <span v-if="reasons?.get(id)" class="locked">{{ reasons.get(id) }}</span>
@@ -117,13 +160,11 @@ function unit(p: Process): string {
 <style scoped>
 .groups {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 h3 {
-  margin: 0 0 0.3rem;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  margin: 0 0 0.25rem;
+  font-size: 0.9375rem;
   color: var(--muted);
 }
 ul {
@@ -131,25 +172,43 @@ ul {
   padding: 0;
   list-style: none;
 }
-li {
+.row {
   display: grid;
-  grid-template-columns: 11rem 1fr;
-  gap: 0.2rem 1rem;
-  padding: 0.35rem 0;
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);
+  gap: 0.15rem 1.25rem;
+  padding: 0.5rem 0;
   border-top: 1px solid var(--border);
-  font-size: 0.95rem;
 }
 .via {
   font-weight: 600;
 }
+.flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.45rem;
+}
+.gives {
+  font-weight: 600;
+}
 .arrow,
-.extra,
-.notes {
+.plus,
+.extra {
   color: var(--muted);
+}
+.arrow {
+  color: var(--accent);
 }
 .notes {
   grid-column: 2;
-  font-size: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.t-off-world {
+  text-decoration: underline dotted var(--border-strong);
 }
 .t-space,
 .t-none {
@@ -157,7 +216,16 @@ li {
 }
 .locked {
   grid-column: 2;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   color: var(--warn);
+}
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+  .notes,
+  .locked {
+    grid-column: 1;
+  }
 }
 </style>

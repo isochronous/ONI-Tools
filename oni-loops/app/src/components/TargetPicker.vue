@@ -15,7 +15,9 @@ const matches = computed<Target[]>(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return []
   const starts = targets.filter((t) => t.name.toLowerCase().startsWith(q))
-  const contains = targets.filter((t) => !t.name.toLowerCase().startsWith(q) && t.name.toLowerCase().includes(q))
+  const contains = targets.filter(
+    (t) => !t.name.toLowerCase().startsWith(q) && t.name.toLowerCase().includes(q),
+  )
   return [...starts, ...contains].slice(0, 12)
 })
 
@@ -28,22 +30,20 @@ function choose(t: Target) {
 
 <template>
   <div class="picker">
-    <label class="picker-label" for="target">I want more…</label>
-    <div class="picker-row">
+    <label class="field" :class="{ open: open && matches.length }">
+      <span class="prompt">I want more</span>
       <input
-        id="target"
         v-model="query"
         type="search"
         autocomplete="off"
-        :placeholder="selected ? selected.name : 'Diamond, Reed Fiber, Polluted Water…'"
+        :placeholder="selected ? 'something else…' : 'Diamond, Reed Fiber, Polluted Water…'"
         @focus="open = true"
         @blur="open = false"
         @keydown.enter.prevent="matches[0] && choose(matches[0])"
       />
-      <span v-if="selected" class="chosen">{{ selected.name }}</span>
-    </div>
-    <ul v-if="open && matches.length" class="matches">
-      <li v-for="t in matches" :key="t.tag" @mousedown.prevent="choose(t)">
+    </label>
+    <ul v-if="open && matches.length" class="matches" role="listbox">
+      <li v-for="t in matches" :key="t.tag" role="option" @mousedown.prevent="choose(t)">
         <span>{{ t.name }}</span>
         <span class="kind">{{ t.kind }}</span>
       </li>
@@ -55,60 +55,68 @@ function choose(t: Target) {
 .picker {
   position: relative;
 }
-.picker-label {
-  display: block;
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-bottom: 0.3rem;
-}
-.picker-row {
+.field {
   display: flex;
-  gap: 0.75rem;
   align-items: center;
+  gap: 0.75rem;
+  padding: 0 0 0 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  transition: border-color 120ms;
+}
+.field:focus-within {
+  border-color: var(--accent);
+}
+.field.open {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.prompt {
+  font-size: 1.125rem;
+  color: var(--muted);
+  white-space: nowrap;
 }
 input {
   flex: 1;
+  min-width: 0;
   font-size: 1.25rem;
-  padding: 0.6rem 0.8rem;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 0.7rem 1rem 0.7rem 0;
+  background: transparent;
+  border: none;
 }
 input:focus {
-  outline: 2px solid var(--accent);
-  border-color: transparent;
+  outline: none;
 }
-.chosen {
-  font-size: 1.1rem;
-  font-weight: 600;
-  white-space: nowrap;
+input::placeholder {
+  color: var(--faint);
 }
 .matches {
   position: absolute;
   z-index: 10;
   left: 0;
   right: 0;
-  margin: 0.3rem 0 0;
+  margin: -1px 0 0;
   padding: 0.3rem;
   list-style: none;
   background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--accent);
+  border-top-color: var(--border);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
 }
 .matches li {
   display: flex;
   justify-content: space-between;
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 .matches li:hover {
-  background: var(--hover);
+  background: var(--raised);
 }
 .kind {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
 }
 </style>

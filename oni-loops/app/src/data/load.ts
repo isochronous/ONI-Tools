@@ -14,8 +14,18 @@ export interface DataSet {
 }
 
 export const DATASETS: DataSet[] = [
-  { id: 'all-dlcs', name: 'Spaced Out! + all content packs', spacedOut: true, load: () => import('../../../data/U59-744825-all-dlcs.json') },
-  { id: 'no-spaced-out', name: 'base game + all content packs', spacedOut: false, load: () => import('../../../data/U59-744825-no-spaced-out.json') },
+  {
+    id: 'all-dlcs',
+    name: 'Spaced Out! + all content packs',
+    spacedOut: true,
+    load: () => import('../../../data/U59-744825-all-dlcs.json'),
+  },
+  {
+    id: 'no-spaced-out',
+    name: 'base game + all content packs',
+    spacedOut: false,
+    load: () => import('../../../data/U59-744825-no-spaced-out.json'),
+  },
 ]
 
 export const SPACED_OUT = 'EXPANSION1_ID'
@@ -31,7 +41,8 @@ export function chooseDataSet(spacedOut: boolean) {
 }
 
 function chosenId(): string {
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.ONI_LOOPS_DATASET
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+    ?.env?.ONI_LOOPS_DATASET
   if (env) return env
   try {
     return localStorage.getItem(DATASET_KEY) ?? 'all-dlcs'
@@ -47,13 +58,18 @@ export const gameData: GameData = (await dataSet.load()).default as GameData
 
 const missing = new Set<string>()
 
+/** The game has no text for some prefabs it ships but never shows (the Atomic Garden); their "name" is the string key. */
+export function unnamed(name: string): boolean {
+  return name.startsWith('MISSING.')
+}
+
 /**
  * The game's display name for a tag. The UI must never show an internal id, so an
  * unknown tag is reported once in development and shown de-camel-cased as a last resort.
  */
 export function label(tag: string): string {
   const name = gameData.names[tag]
-  if (name) return name
+  if (name && !unnamed(name)) return name
   if (import.meta.env?.DEV && !missing.has(tag)) {
     missing.add(tag)
     console.warn(`[oni-loops] no display name for tag ${tag}`)
