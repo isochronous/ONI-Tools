@@ -149,7 +149,13 @@ function plural(n: number, word: string): string {
             <div class="controls">
               <label class="demand">
                 <span>Run each loop at</span>
-                <input v-model.number="perCycle" type="number" min="0.1" step="any" class="num" />
+                <input
+                  v-model.lazy.number="perCycle"
+                  type="number"
+                  min="0.1"
+                  step="any"
+                  class="num"
+                />
                 <span>{{ targetIsElement ? 'kg' : '' }} per cycle</span>
               </label>
               <label class="floor">

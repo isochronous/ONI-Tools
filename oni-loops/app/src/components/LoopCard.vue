@@ -91,10 +91,18 @@ function countText(i: number): string {
   }
 }
 
-/** "0.045 kg Sand", or "0.5 kg of any seed" for an input that takes several things. */
+/**
+ * Every amount on the chain is shown at the rate the page runs the loop at, so "1 kg Peat"
+ * becomes "100 kg Peat" when 100 kg enter each cycle.
+ */
+function atRate(amount: number): number {
+  return amount * props.perCycle
+}
+
+/** "4.5 kg Sand", or "50 kg of any seed" for an input that takes several things, per cycle. */
 function flowText(f: Flow): string {
-  if (!f.anyOf) return qty(f.amount, f.tag)
-  return `${fmt(f.amount)}${unitOf(f.tag)} of any ${f.anyOfName ?? graph.kinds.get(f.tag) ?? 'item'}`
+  if (!f.anyOf) return qty(atRate(f.amount), f.tag)
+  return `${fmt(atRate(f.amount))}${unitOf(f.tag)} of any ${f.anyOfName ?? graph.kinds.get(f.tag) ?? 'item'}`
 }
 
 /** Joins names the way a sentence would: "a", "a and b", "a, b, and c". */
@@ -126,12 +134,10 @@ function needs(extras: string[] | undefined): string {
         <span class="return-text">
           <template v-if="run.topUpAmount > 0">
             back for every {{ unit }} {{ label(target) }} in, with
-            <strong>{{ qty(run.topUpAmount, loop.topUp!.tag) }}</strong> added along the way ({{
-              qty(run.topUpAmount * perCycle, loop.topUp!.tag)
+            <strong>{{ qty(atRate(run.topUpAmount), loop.topUp!.tag) }}</strong> added per cycle ({{
+              qty(run.topUpAmount, loop.topUp!.tag)
             }}
-            per cycle at {{ fmt(perCycle) }}{{ unitOf(target) }}). Alone it returns ×{{
-              fmt(loop.ratio)
-            }}.
+            per {{ unit }}). Alone it returns ×{{ fmt(loop.ratio) }}.
           </template>
           <template v-else-if="isPositive(loop)"
             >back for every {{ unit }} {{ label(target) }} in, with nothing added: run at
@@ -179,12 +185,12 @@ function needs(extras: string[] | undefined): string {
     <ol class="chain">
       <li v-for="(s, i) in loop.steps" :key="i" class="step">
         <p class="node">
-          <span class="amount num"><TagIcon :tag="s.from" />{{ qty(own(i), s.from) }}</span>
+          <span class="amount num"><TagIcon :tag="s.from" />{{ qty(atRate(own(i)), s.from) }}</span>
           <span
             v-if="loop.topUp && loop.topUp.step === i && run.topUpAmount > 0"
             class="added num"
             :title="`${label(s.from)} is ${TIER_LABEL[loop.topUp.tier]} for your colony: ${tiers.reason(s.from)}`"
-            >+ {{ fmt(run.topUpAmount) }}{{ unitOf(s.from) }} provided separately</span
+            >+ {{ fmt(atRate(run.topUpAmount)) }}{{ unitOf(s.from) }} provided separately</span
           >
         </p>
         <p class="via">
@@ -222,7 +228,7 @@ function needs(extras: string[] | undefined): string {
       <li class="step end">
         <p class="node">
           <span class="amount num"
-            ><TagIcon :tag="target" />{{ qty(into(loop.steps.length), target) }}</span
+            ><TagIcon :tag="target" />{{ qty(atRate(into(loop.steps.length)), target) }}</span
           >
           <span class="back">back where it started</span>
         </p>
@@ -230,7 +236,7 @@ function needs(extras: string[] | undefined): string {
     </ol>
 
     <p v-if="run.externals.length || run.byproducts.length" class="foot">
-      Over the whole loop, per {{ unit }} {{ label(target) }}:
+      Over the whole loop, each cycle:
       <template v-if="run.externals.length">
         <template v-for="(f, k) in run.externals" :key="f.tag"
           ><template v-if="k > 0">{{ k === run.externals.length - 1 ? ' and ' : ', ' }}</template
@@ -238,13 +244,13 @@ function needs(extras: string[] | undefined): string {
             class="extra"
             :class="'t-' + tiers.of(f.tag)"
             :title="`${TIER_LABEL[tiers.of(f.tag)]}: ${tiers.reason(f.tag)}`"
-            >{{ qty(f.amount, f.tag) }}</span
+            >{{ qty(atRate(f.amount), f.tag) }}</span
           ></template
         >
         in<template v-if="run.byproducts.length">; </template>
       </template>
       <template v-if="run.byproducts.length">
-        {{ list(run.byproducts.map((f) => qty(f.amount, f.tag))) }} out</template
+        {{ list(run.byproducts.map((f) => qty(atRate(f.amount), f.tag))) }} out</template
       >.
     </p>
   </article>
