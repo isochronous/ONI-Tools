@@ -41,7 +41,7 @@ const tiers = computed(() =>
 const result = computed(() =>
   target.value ? answer(graph, target.value, store.colony, tiers.value) : null,
 )
-const facets = computed(() => (result.value ? facetsOf(result.value) : []))
+const facets = computed(() => (result.value ? facetsOf(graph, result.value) : []))
 
 const aboveFloor = computed(
   () => result.value?.loops.filter((l) => effectiveRatio(l) >= store.loopFloor - 1e-9) ?? [],
@@ -49,7 +49,7 @@ const aboveFloor = computed(
 const belowFloor = computed(() => (result.value?.loops.length ?? 0) - aboveFloor.value.length)
 const shownLoops = computed(() =>
   result.value
-    ? aboveFloor.value.filter((l) => passes(loopKeys(l, result.value!.target), store.hidden))
+    ? aboveFloor.value.filter((l) => passes(loopKeys(graph, l, result.value!.target), store.hidden))
     : [],
 )
 const filteredLoops = computed(() => aboveFloor.value.length - shownLoops.value.length)
@@ -59,14 +59,14 @@ const sideLoops = computed(() => shownLoops.value.filter((l) => !l.primary))
 const shownProducers = computed(() =>
   result.value
     ? result.value.producers.filter((p) =>
-        passes(processKeys(p, result.value!.target), store.hidden),
+        passes(processKeys(graph, p, result.value!.target), store.hidden),
       )
     : [],
 )
 const shownLocked = computed(() =>
   result.value
     ? result.value.locked.filter((l) =>
-        passes(processKeys(l.process, result.value!.target), store.hidden),
+        passes(processKeys(graph, l.process, result.value!.target), store.hidden),
       )
     : [],
 )
@@ -127,6 +127,7 @@ function plural(n: number, word: string): string {
           :hidden-loops="filteredLoops"
           :hidden-sources="filteredSources"
           @toggle="store.toggleHidden"
+          @set="store.setHidden"
           @clear="store.clearHidden"
         />
 

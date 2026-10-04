@@ -9,7 +9,11 @@ const props = defineProps<{
   hiddenLoops: number
   hiddenSources: number
 }>()
-const emit = defineEmits<{ (e: 'toggle', key: string): void; (e: 'clear'): void }>()
+const emit = defineEmits<{
+  (e: 'toggle', key: string): void
+  (e: 'set', keys: string[], off: boolean): void
+  (e: 'clear'): void
+}>()
 
 const groups = computed(() =>
   FACET_GROUPS.map((g) => ({ ...g, facets: props.facets.filter((f) => f.group === g.id) })).filter(
@@ -17,6 +21,11 @@ const groups = computed(() =>
   ),
 )
 const active = computed(() => props.facets.filter((f) => props.hidden.has(f.key)).length)
+
+/** True when every chip of the group is switched off, so the group link offers to switch them back on. */
+function allOff(facets: Facet[]): boolean {
+  return facets.every((f) => props.hidden.has(f.key))
+}
 
 function summary(): string {
   const parts: string[] = []
@@ -46,7 +55,22 @@ function summary(): string {
         <button type="button" class="link" @click="emit('clear')">Show everything</button>
       </p>
       <div v-for="g in groups" :key="g.id" class="row">
-        <span class="row-title">{{ g.title }}</span>
+        <span class="row-title">
+          {{ g.title }}
+          <button
+            type="button"
+            class="link all"
+            @click="
+              emit(
+                'set',
+                g.facets.map((f) => f.key),
+                !allOff(g.facets),
+              )
+            "
+          >
+            {{ allOff(g.facets) ? 'all on' : 'all off' }}
+          </button>
+        </span>
         <div class="chips">
           <button
             v-for="f in g.facets"
@@ -118,14 +142,19 @@ function summary(): string {
 }
 .row {
   display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr);
+  grid-template-columns: 7rem minmax(0, 1fr);
   gap: 0.5rem 1rem;
   align-items: start;
 }
 .row-title {
+  display: grid;
+  justify-items: start;
   font-size: 0.875rem;
   color: var(--muted);
   padding-top: 0.2rem;
+}
+.all {
+  font-size: 0.8125rem;
 }
 .chips {
   display: flex;

@@ -123,6 +123,15 @@ export const useColonyStore = defineStore('colony', () => {
     hidden.value = toggled(hidden.value, key)
   }
 
+  /** Switches a whole group of filter keys off (or back on) at once. */
+  function setHidden(keys: string[], off: boolean) {
+    const next = new Set(hidden.value)
+    for (const k of keys)
+      if (off) next.add(k)
+      else next.delete(k)
+    hidden.value = next
+  }
+
   function clearHidden() {
     hidden.value = new Set()
   }
@@ -146,6 +155,7 @@ export const useColonyStore = defineStore('colony', () => {
     assumeAllCritters,
     toggleGeyser,
     toggleHidden,
+    setHidden,
     clearHidden,
   }
 })
