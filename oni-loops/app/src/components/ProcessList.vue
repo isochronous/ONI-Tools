@@ -109,6 +109,7 @@ const INSTANCE_NOUN = {
   critter: 'critter',
   plant: 'plant',
   duplicant: 'Duplicant',
+  geyser: 'geyser',
 }
 
 /** "about 3,000 kg per cycle per building", from the process's rate per instance. */

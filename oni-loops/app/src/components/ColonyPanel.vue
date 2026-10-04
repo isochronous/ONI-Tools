@@ -143,22 +143,6 @@ function has(id: string) {
         </label>
       </div>
     </div>
-
-    <details class="group fine">
-      <summary>Fine print</summary>
-      <label class="slider">
-        Call a loop side-stream when the target is under
-        <strong class="num">{{ Math.round(store.primaryShare * 100) }}%</strong> of what a step
-        consumes
-        <input v-model.number="store.primaryShare" type="range" min="0" max="1" step="0.05" />
-      </label>
-      <p class="hint">
-        A side-stream loop passes through a step where the loop's own material is only a small part
-        of what that step consumes, so the step's output is really paid for by something else: 0.04
-        kg of carbon dioxide into an Algae Terrarium that drinks 180 kg of water does not make the
-        water "free". They are listed after the others.
-      </p>
-    </details>
   </section>
 </template>
 
@@ -216,14 +200,6 @@ select {
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
 }
-.slider {
-  display: block;
-  font-size: 0.9375rem;
-}
-.slider input {
-  display: block;
-  margin-top: 0.3rem;
-}
 .count {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr);
@@ -239,12 +215,5 @@ select {
 }
 .count .hint {
   margin: 0;
-}
-.fine summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 0.875rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
 }
 </style>

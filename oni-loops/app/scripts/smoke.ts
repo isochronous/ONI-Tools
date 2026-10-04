@@ -1,6 +1,6 @@
 import { dataSet, gameData, label, SPACED_OUT } from '../src/data/load'
-import { buildGraph, fmt } from '../src/model/graph'
-import { answer, effectiveRatio, setDlcNames, type Colony } from '../src/model/search'
+import { buildGraph, fmt, stepLabel } from '../src/model/graph'
+import { answer, setDlcNames, type Colony, type Node } from '../src/model/chains'
 import { computeTiers, guaranteedGeysers, randomGeyserSlots, TIER_LABEL } from '../src/model/tiers'
 
 const graph = buildGraph(gameData)
@@ -23,7 +23,6 @@ const colony: Colony = {
   critters: null,
   cluster: clusterId,
   geysers: new Set(guaranteed.keys()),
-  primaryShare: 0.5,
   duplicants: 8,
 }
 const tiers = computeTiers(gameData, graph, colony, cluster, colony.geysers)
@@ -46,32 +45,35 @@ for (const tag of [
     `  ${label(tag).padEnd(16)} ${TIER_LABEL[tiers.of(tag)].padEnd(28)} ${tiers.reason(tag)}`,
   )
 
-for (const target of ['Diamond', 'BasicFabric', 'TempConductorSolid', 'Water']) {
-  const a = answer(graph, target, colony, tiers, graph.elements.has(target) ? 100 : 10)
-  console.log(
-    `\n== ${label(target)}: ${a.loops.length} loops, ${a.producers.length} producers, ${a.locked.length} locked`,
-  )
-  for (const loop of a.loops.slice(0, 4)) {
-    console.log(
-      `  x${fmt(loop.ratio)}${loop.topUp && loop.topUp.amount > 0 ? ` (x${fmt(effectiveRatio(loop))} with ${fmt(loop.topUp.amount)} ${label(loop.topUp.tag)} at step ${loop.topUp.step + 1})` : ''} ${loop.primary ? 'primary' : 'side-stream(' + fmt(loop.minShare * 100) + '%)'} worst=${loop.worstTier}: ` +
-        loop.steps
-          .map(
-            (s) =>
-              `${label(s.from)} -[${s.process.via}${s.alternatives?.length ? ' or ' + s.alternatives.join('/') : ''}]-> ${label(s.to)}`,
-          )
-          .join(' ; '),
-    )
-    if (loop.ceiling !== undefined)
+/** One line per node, inputs first, indented by depth. */
+function show(n: Node, depth: number) {
+  const pad = '      ' + '  '.repeat(depth)
+  for (const i of n.inputs) {
+    if (i.node) show(i.node, depth + 1)
+    else
       console.log(
-        `      ceiling ${fmt(loop.ceiling)}/cycle with 8 dupes at step ${(loop.ceilingStep ?? 0) + 1}${loop.capped ? ' (capped)' : ''}`,
+        `${pad}  ${fmt(i.amount)} ${label(i.tag)}${i.feedback ? ' (fed back)' : ` [${i.tier}]`}`,
       )
-    if (loop.externals.length)
+  }
+  console.log(
+    `${pad}${stepLabel(n.process)}${n.alternatives?.length ? ' or ' + n.alternatives.join('/') : ''} -> ${fmt(n.amount)} ${label(n.output)}`,
+  )
+}
+
+for (const target of process.argv.slice(3).length
+  ? process.argv.slice(3)
+  : ['IgneousRock', 'Diamond', 'BasicFabric', 'Water', 'Peat']) {
+  const a = answer(graph, target, colony, tiers, graph.elements.has(target) ? 100 : 10)
+  console.log(`\n== ${label(target)}: ${a.chains.length} ways, ${a.locked.length} locked`)
+  for (const c of a.chains.slice(0, 4)) {
+    console.log(
+      `  [${c.worstTier}] ${c.size} steps${c.feedback ? `, feedback ${fmt(c.feedback * 100)}%` : ''}${c.ceiling !== undefined ? `, ceiling ${fmt(c.ceiling)}/cycle${c.capped ? ' (capped)' : ''}` : ''}`,
+    )
+    show(c.root, 0)
+    if (c.needs.length)
       console.log(
         '      needs: ' +
-          loop.externals
-            .slice(0, 4)
-            .map((f) => `${fmt(f.amount)} ${label(f.tag)} [${tiers.of(f.tag)}]`)
-            .join(', '),
+          c.needs.map((i) => `${fmt(i.amount)} ${label(i.tag)} [${i.tier}]`).join(', '),
       )
   }
 }

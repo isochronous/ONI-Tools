@@ -56,7 +56,7 @@ export interface Throughput {
   /** Runs of the process one instance completes per cycle at full uptime. */
   runsPerCycle: number
   /** What one instance is. */
-  instance: 'building' | 'critter' | 'plant' | 'duplicant'
+  instance: 'building' | 'critter' | 'plant' | 'duplicant' | 'geyser'
   /** A Duplicant stands at the building for the whole run (a Rock Crusher), so its time is spent too. */
   operated?: boolean
 }
@@ -79,6 +79,16 @@ export interface Process {
   pipedOutput?: boolean
   /** Rate per instance, when the mechanism has one (phase changes and off-gassing have none). */
   throughput?: Throughput
+  /**
+   * An in-world phase change past 500 °C or below -50 °C: reachable only with a volcano, a
+   * magma pool, or serious engineering, so such a route is listed after every other.
+   */
+  extremeTemperature?: boolean
+  /**
+   * A building that gives this off while doing something else (a Smoker's carbon dioxide):
+   * not a plan for making it, so such a route is listed after the deliberate ones.
+   */
+  incidental?: boolean
   /** Time one run takes, in seconds, when known. */
   seconds?: number
 }
@@ -92,6 +102,8 @@ export interface Graph {
   elements: Set<string>
   /** Item id -> kind (seed, food, egg, critter, plant, item). */
   kinds: Map<string, string>
+  /** Elements that only exist above 500 °C (Molten Steel, Magma): bringing one from outside is not a plan. */
+  hotOnly: Set<string>
 }
 
 /** The input flow of `p` that `tag` satisfies, if any. */
@@ -127,6 +139,20 @@ export function stepLabel(p: Process): string {
       return p.via + ' harvest'
     case 'rot':
       return p.viaId === 'RotPile' ? p.via + ' decomposes' : p.via + ' spoils'
+    case 'egg':
+      return p.via + ' lays an egg'
+    case 'grow':
+      return p.via + ' grows up'
+    case 'shear':
+      return p.via + ' sheared'
+    case 'seed':
+      return p.via + ' drops a seed'
+    case 'harvest-bonus':
+      return p.via + ' skilled harvest'
+    case 'worldgen':
+      return `dug from ${p.via}'s terrain`
+    case 'starmap':
+      return `brought back from ${p.via}`
     default:
       return p.via
   }
@@ -140,6 +166,10 @@ const CLASS_NAMES: Record<string, string> = {
   CombustibleLiquid: 'combustible liquid',
   PlastifiableLiquid: 'plastifiable liquid',
 }
+
+/** In-world temperatures beyond these take a volcano, a magma pool, or serious engineering. */
+const EXTREME_HOT_K = 773.15
+const EXTREME_COLD_K = 223.15
 
 /** RotPile.States: a pile converts to Polluted Dirt once its decomposition amount reaches 600 s. */
 const ROT_PILE_SECONDS = 600
@@ -160,11 +190,26 @@ export function buildGraph(d: GameData): Graph {
     // The sim changes phase only once the temperature is `buffer` kelvin past the nominal
     // point (Water freezes at -3 °C, not 0 °C), so the thresholds shown are the in-game ones.
     const buffer = d.tuning.stateTransitionBufferK ?? 0
-    const transitions: [string, { id: string; massFraction: number } | undefined, string][] = [
-      [e.highTempTarget, e.highTempOre, `heated in-world past ${celsius(e.highTemp + buffer)} °C`],
-      [e.lowTempTarget, e.lowTempOre, `cooled in-world below ${celsius(e.lowTemp - buffer)} °C`],
+    const transitions: [
+      string,
+      { id: string; massFraction: number } | undefined,
+      string,
+      boolean,
+    ][] = [
+      [
+        e.highTempTarget,
+        e.highTempOre,
+        `heated in-world past ${celsius(e.highTemp + buffer)} °C`,
+        e.highTemp + buffer > EXTREME_HOT_K,
+      ],
+      [
+        e.lowTempTarget,
+        e.lowTempOre,
+        `cooled in-world below ${celsius(e.lowTemp - buffer)} °C`,
+        e.lowTemp - buffer < EXTREME_COLD_K,
+      ],
     ]
-    for (const [target, ore, note] of transitions) {
+    for (const [target, ore, note, extreme] of transitions) {
       if (!target || target === 'Vacuum' || target === 'Void' || !elementIds.has(target)) continue
       const outputs: Flow[] = []
       if (ore && ore.massFraction > 0 && elementIds.has(ore.id)) {
@@ -182,6 +227,7 @@ export function buildGraph(d: GameData): Graph {
         dlc,
         needs: {},
         notes: [note],
+        extremeTemperature: extreme || undefined,
       })
     }
     if (e.sublimate && elementIds.has(e.sublimate.id)) {
@@ -344,6 +390,7 @@ export function buildGraph(d: GameData): Graph {
       dlc: b.dlc,
       needs: { building: b.id, extras: hot.length ? hot : undefined },
       pipedOutput: b.outputConduit !== undefined,
+      incidental: inputs.length === 0 || undefined,
       throughput,
       notes: perUse ? ['per use'] : ['per second while running'],
       seconds: perUse ? undefined : 1,
@@ -542,9 +589,11 @@ export function buildGraph(d: GameData): Graph {
     if (!elementIds.has(g.element)) continue
     add({
       kind: 'geyser',
-      via: d.names[g.id] ?? label(g.element) + ' geyser',
+      via: d.names['GeyserGeneric_' + g.id] ?? d.names[g.id] ?? label(g.element) + ' geyser',
       viaId: g.id,
       inputs: [],
+      // One geyser yields its average per cycle; the amount below is that average.
+      throughput: { runsPerCycle: 1, instance: 'geyser' },
       outputs: [{ tag: g.element, amount: (g.minRatePerCycle + g.maxRatePerCycle) / 2 }],
       dlc: g.dlc,
       needs: {},
@@ -608,7 +657,10 @@ export function buildGraph(d: GameData): Graph {
     for (const i of p.inputs) for (const tag of i.anyOf ?? [i.tag]) push(byInput, tag, p)
   }
   const kinds = new Map(d.items.map((it) => [it.id, it.kind]))
-  return { processes, byOutput, byInput, critters, elements: elementIds, kinds }
+  const hotOnly = new Set(
+    d.elements.filter((e) => !e.disabled && (e.lowTemp ?? 0) > EXTREME_HOT_K).map((e) => e.id),
+  )
+  return { processes, byOutput, byInput, critters, elements: elementIds, kinds, hotOnly }
 }
 
 function push(map: Map<string, Process[]>, key: string, p: Process) {

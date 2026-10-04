@@ -1,7 +1,7 @@
 import type { ClusterData, GameData, WorldData } from '../data/types'
 import { destinationDlc, type Graph, type Process } from './graph'
-import type { Colony } from './search'
-import { isAvailable } from './search'
+import type { Colony } from './chains'
+import { isAvailable } from './chains'
 
 /**
  * How reachable a resource is for a colony, best first. Decides how much an external
@@ -29,6 +29,10 @@ export interface Tiers {
   of(tag: string): Tier
   /** Why a tag got its tier, for tooltips. */
   reason(tag: string): string
+  /** What a world's terrain costs the colony: local on its start world, off-world elsewhere in its cluster, null outside it. */
+  worldTier(worldId: string): Tier | null
+  /** The tier a tag gets from sources alone (geysers, terrain, rockets, and things that take no input), ignoring what can be made from other things. */
+  direct(tag: string): Tier
 }
 
 /** Geysers a cluster's worlds are guaranteed, by geyser type id ("molten_iron"), with how many. */
@@ -177,6 +181,21 @@ export function computeTiers(
     for (const tag of Object.keys(s.entities)) set(tag, 'space', `from the ${s.name} by rocket`)
   }
 
+  // What the sources alone give, before anything is made from anything: a leaf a chain
+  // cannot expand is only as good as this.
+  const direct = new Map(tier)
+  for (const p of graph.processes)
+    if (
+      p.inputs.length === 0 &&
+      p.kind !== 'worldgen' &&
+      p.kind !== 'geyser' &&
+      p.kind !== 'starmap' &&
+      !isAvailable(p, colony)
+    )
+      for (const o of p.outputs)
+        if (!direct.has(o.tag) || TIER_ORDER[direct.get(o.tag)!] > TIER_ORDER.renewable)
+          direct.set(o.tag, 'renewable')
+
   const usable = graph.processes.filter(
     (p) =>
       p.kind !== 'worldgen' &&
@@ -204,9 +223,16 @@ export function computeTiers(
     }
   }
 
+  const worldTiers = new Map<string, Tier>()
+  if (cluster)
+    for (const w of worldsOf(d, cluster))
+      worldTiers.set(w.world, w === start ? 'local' : 'off-world')
+
   return {
     of: (tag) => tier.get(tag) ?? 'none',
     reason: (tag) => reason.get(tag) ?? 'nothing your colony can reach makes or contains it',
+    worldTier: (id) => worldTiers.get(id) ?? null,
+    direct: (tag) => direct.get(tag) ?? 'none',
   }
 }
 

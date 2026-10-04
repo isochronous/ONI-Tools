@@ -1,11 +1,11 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { chooseDataSet, dataSet, gameData, SPACED_OUT } from '../data/load'
-import { DEFAULT_DUPLICANTS, DEFAULT_PRIMARY_SHARE, type Colony } from '../model/search'
+import { DEFAULT_DUPLICANTS, type Colony } from '../model/chains'
 import { guaranteedGeysers } from '../model/tiers'
 
 const STORAGE_KEY = 'oni-loops.colony'
-const SAVED_VERSION = 3
+const SAVED_VERSION = 4
 
 interface Saved {
   /** Bumped when a default changes so stale saved values are dropped. */
@@ -15,9 +15,7 @@ interface Saved {
   cluster: string | null
   /** Geyser types found on the map beyond the guaranteed ones. */
   extraGeysers: string[]
-  primaryShare: number
   duplicants: number
-  loopFloor: number
   /** How much of a target the player wants per cycle, for elements (kg) and for items (count). */
   demandKg: number
   demandItems: number
@@ -42,9 +40,9 @@ function toggled(set: Set<string>, id: string): Set<string> {
 }
 
 /**
- * What the player's colony has (DLCs, asteroid and geysers, ranchable critters), which
- * changes the answers, plus the view preferences that only hide parts of them (the loop
- * floor and the filters).
+ * What the player's colony has (DLCs, asteroid and geysers, ranchable critters, Duplicants),
+ * which changes the answers, plus what it wants per cycle and the filters that only hide
+ * parts of the answer.
  */
 export const useColonyStore = defineStore('colony', () => {
   const saved = load()
@@ -55,17 +53,10 @@ export const useColonyStore = defineStore('colony', () => {
   /** null = assume any critter is available. */
   const critters = ref<Set<string> | null>(saved?.critters ? new Set(saved.critters) : null)
   const cluster = ref<string | null>(saved?.cluster ?? null)
-  const primaryShare = ref(
-    saved?.v === SAVED_VERSION
-      ? (saved.primaryShare ?? DEFAULT_PRIMARY_SHARE)
-      : DEFAULT_PRIMARY_SHARE,
-  )
   const extraGeysers = ref(new Set(saved?.extraGeysers ?? []))
   const duplicants = ref(saved?.duplicants ?? DEFAULT_DUPLICANTS)
   const demandKg = ref(saved?.demandKg ?? 100)
   const demandItems = ref(saved?.demandItems ?? 10)
-  /** Smallest return a loop may have and still be listed. */
-  const loopFloor = ref(saved?.loopFloor ?? 0.5)
   const hidden = ref(new Set(saved?.hidden ?? []))
 
   const clusterData = computed(() => gameData.clusters.find((c) => c.id === cluster.value) ?? null)
@@ -78,7 +69,6 @@ export const useColonyStore = defineStore('colony', () => {
     critters: critters.value,
     cluster: cluster.value,
     geysers: geysers.value,
-    primaryShare: primaryShare.value,
     duplicants: duplicants.value,
   }))
 
@@ -90,9 +80,7 @@ export const useColonyStore = defineStore('colony', () => {
         critters: critters.value ? [...critters.value] : null,
         cluster: cluster.value,
         extraGeysers: [...extraGeysers.value],
-        primaryShare: primaryShare.value,
         duplicants: duplicants.value,
-        loopFloor: loopFloor.value,
         demandKg: demandKg.value,
         demandItems: demandItems.value,
         hidden: [...hidden.value],
@@ -147,12 +135,11 @@ export const useColonyStore = defineStore('colony', () => {
     hidden.value = new Set()
   }
 
-  watch([colony, loopFloor, hidden, demandKg, demandItems], save, { deep: true })
+  watch([colony, hidden, demandKg, demandItems], save, { deep: true })
 
   return {
     dlcs,
     critters,
-    primaryShare,
     duplicants,
     demandKg,
     demandItems,
@@ -161,7 +148,6 @@ export const useColonyStore = defineStore('colony', () => {
     guaranteed,
     extraGeysers,
     geysers,
-    loopFloor,
     hidden,
     colony,
     toggleDlc,

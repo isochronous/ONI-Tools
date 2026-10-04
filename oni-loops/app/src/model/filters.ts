@@ -1,6 +1,6 @@
 import { label } from '../data/load'
 import type { Graph, Process } from './graph'
-import type { Answer, Loop } from './search'
+import { nodesOf, type Answer, type Chain } from './chains'
 
 /**
  * Filters hide answers that depend on something the player does not have or does not want
@@ -32,7 +32,7 @@ export interface Facet {
   /** The game's tag or prefab id. */
   id: string
   name: string
-  /** How many of the current loops and sources depend on it. */
+  /** How many of the current chains depend on it. */
   uses: number
 }
 
@@ -40,28 +40,30 @@ function key(group: FacetGroup, id: string): string {
   return `${group}:${id}`
 }
 
-/** What a single process depends on: what runs it, and what it is fed (not the alternatives of an any-of input). */
-export function processKeys(graph: Graph, p: Process, target: string): string[] {
-  const keys: string[] = []
-  if (p.needs.building) keys.push(key('machine', p.needs.building))
-  if (p.needs.critter) keys.push(key('critter', p.needs.critter))
-  if (p.needs.plant) keys.push(key('plant', p.needs.plant))
-  for (const f of p.inputs)
-    if (!f.anyOf && f.tag !== target) keys.push(key(materialGroup(graph, f.tag), f.tag))
-  return keys
+function doerKeys(p: Process, keys: Set<string>) {
+  if (p.needs.building) keys.add(key('machine', p.needs.building))
+  if (p.needs.critter) keys.add(key('critter', p.needs.critter))
+  if (p.needs.plant) keys.add(key('plant', p.needs.plant))
 }
 
-/** What a loop depends on: every step's machine, critter, or plant, every intermediate, and every outside input. */
-export function loopKeys(graph: Graph, loop: Loop, target: string): string[] {
+/** What a single process depends on: what runs it, and what it is fed (not the alternatives of an any-of input). */
+export function processKeys(graph: Graph, p: Process, target: string): string[] {
   const keys = new Set<string>()
-  for (const s of loop.steps) {
-    const p = s.process
-    if (p.needs.building) keys.add(key('machine', p.needs.building))
-    if (p.needs.critter) keys.add(key('critter', p.needs.critter))
-    if (p.needs.plant) keys.add(key('plant', p.needs.plant))
-    if (s.from !== target) keys.add(key(materialGroup(graph, s.from), s.from))
+  doerKeys(p, keys)
+  for (const f of p.inputs)
+    if (!f.anyOf && f.tag !== target) keys.add(key(materialGroup(graph, f.tag), f.tag))
+  return [...keys]
+}
+
+/** What a chain depends on: every node's machine, critter, or plant, every intermediate, and every outside input. */
+export function chainKeys(graph: Graph, chain: Chain): string[] {
+  const keys = new Set<string>()
+  for (const n of nodesOf(chain)) {
+    doerKeys(n.process, keys)
+    if (n.output !== chain.target) keys.add(key(materialGroup(graph, n.output), n.output))
+    for (const i of n.inputs)
+      if (!i.node && !i.feedback) keys.add(key(materialGroup(graph, i.tag), i.tag))
   }
-  for (const f of loop.externals) keys.add(key(materialGroup(graph, f.tag), f.tag))
   return [...keys]
 }
 
@@ -71,8 +73,7 @@ export function facetsOf(graph: Graph, answer: Answer): Facet[] {
   const count = (keys: string[]) => {
     for (const k of keys) uses.set(k, (uses.get(k) ?? 0) + 1)
   }
-  for (const l of answer.loops) count(loopKeys(graph, l, answer.target))
-  for (const p of answer.producers) count(processKeys(graph, p, answer.target))
+  for (const c of answer.chains) count(chainKeys(graph, c))
   for (const { process } of answer.locked) count(processKeys(graph, process, answer.target))
   const facets: Facet[] = []
   for (const [k, n] of uses) {

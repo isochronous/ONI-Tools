@@ -1,7 +1,7 @@
 import icons from '../../../data/icons.json'
 import { gameData, label, unnamed } from '../data/load'
 import { buildGraph, fmt, type Graph } from './graph'
-import { setDlcNames } from './search'
+import { setDlcNames } from './chains'
 
 const iconTags = new Set<string>(icons as string[])
 
