@@ -30,7 +30,9 @@ namespace OniDataDump
 			if (done)
 				return;
 			done = true;
-			string path = Path.Combine(Util.RootFolder(), "oni-data-dump.json");
+			// One file per DLC set, so a Spaced Out run and a base-game run do not overwrite
+			// each other: oni-data-dump.all-dlcs.json, oni-data-dump.no-spaced-out.json, ...
+			string path = Path.Combine(Util.RootFolder(), "oni-data-dump." + Dump.Flavour() + ".json");
 			try
 			{
 				Dump.WriteTo(path);

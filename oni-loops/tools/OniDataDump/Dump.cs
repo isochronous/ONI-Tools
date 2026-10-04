@@ -60,6 +60,20 @@ namespace OniDataDump
 
 		// ---- helpers ----
 
+		/// <summary>"all-dlcs", "base", "no-spaced-out", or the active ids joined; mirrors tools/import-dump.py.</summary>
+		public static string Flavour()
+		{
+			var all = DlcIds().ToList();
+			var active = all.Where(id => DlcManager.IsContentSubscribed(id)).ToList();
+			if (active.Count == all.Count)
+				return "all-dlcs";
+			if (active.Count == 0)
+				return "base";
+			if (active.Count == all.Count - 1 && !active.Contains(DlcManager.EXPANSION1_ID))
+				return "no-spaced-out";
+			return string.Join("+", active.Select(id => id.Replace("_ID", "").ToLowerInvariant()));
+		}
+
 		private static IEnumerable<string> DlcIds()
 		{
 			return new[] { DlcManager.EXPANSION1_ID, DlcManager.DLC2_ID, DlcManager.DLC3_ID, DlcManager.DLC4_ID, DlcManager.DLC5_ID };
