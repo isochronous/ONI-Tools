@@ -6,9 +6,10 @@ import { TIER_LABEL, type Tiers } from '../model/tiers'
 import TagIcon from './TagIcon.vue'
 
 /**
- * One node of a chain as a tree entry: the material made, the step that makes it, and
- * beneath it, indented, one entry per input that is itself made. Inputs taken from
- * outside are named in the step's sentence. The target is the root; sources are the leaves.
+ * One node of a chain as a tree entry, read the way it is built: above it, indented, one
+ * entry per input that is itself made, each ending in the material it yields; then the step;
+ * then the material this entry makes. Inputs taken from outside are named in the step's
+ * sentence. Sources are at the top of the card and the target is its last line.
  */
 const props = defineProps<{
   node: Node
@@ -95,12 +96,10 @@ function doer(): string | undefined {
 </script>
 
 <template>
-  <li class="entry" :class="{ root, source: node.inputs.length === 0 }">
-    <p class="material">
-      <span class="amount num"
-        ><TagIcon :tag="node.output" />{{ qty(at(node.amount), node.output) }}</span
-      >
-    </p>
+  <li class="entry" :class="{ root, source: node.inputs.length === 0, fed: made().length > 0 }">
+    <ul v-if="made().length" class="inputs">
+      <ChainTree v-for="i in made()" :key="i.tag" :node="i.node!" :rate="rate" :tiers="tiers" />
+    </ul>
     <p class="step">
       <span class="how"><TagIcon v-if="doer()" :tag="doer()!" />{{ stepLabel(node.process) }}</span
       ><span v-if="countText()" class="count"> ({{ countText() }})</span
@@ -126,54 +125,56 @@ function doer(): string | undefined {
         >Or {{ alternatives(node.alternatives) }}.</span
       >
     </p>
-    <ul v-if="made().length" class="inputs">
-      <ChainTree v-for="i in made()" :key="i.tag" :node="i.node!" :rate="rate" :tiers="tiers" />
-    </ul>
+    <p class="material">
+      <span class="amount num"
+        ><TagIcon :tag="node.output" />{{ qty(at(node.amount), node.output) }}</span
+      >
+    </p>
   </li>
 </template>
 
 <style scoped>
 /*
- * A file-tree: each entry hangs off its parent's vertical line by a short tick. The line
- * runs down past every sibling and stops at the last one's tick.
+ * Every entry ends in a dot on the material it makes. The materials an entry is fed with
+ * are entries of their own, indented above it; a line runs from the first of their dots
+ * down into this entry's dot, with a tick from the line to each of them. Read top to bottom,
+ * the card goes from sources to the product.
  */
 .entry {
   --indent: 1.75rem;
-  --tick: 1.1rem;
+  --x: 0.5rem; /* where this entry's dot and the line into it sit */
+  --dot-y: 0.8rem; /* dot centre, measured from the top of the material row */
   position: relative;
-  padding: 0.6rem 0 0 0;
+  padding-bottom: 0.6rem;
 }
 .inputs {
   list-style: none;
   margin: 0;
   padding: 0 0 0 var(--indent);
 }
-.inputs > .entry::before {
-  content: '';
-  position: absolute;
-  left: calc(-1 * var(--indent) + 0.5rem);
-  top: 0;
-  bottom: 0;
-  border-left: 2px solid var(--rail);
-}
-.inputs > .entry:last-child::before {
-  bottom: auto;
-  height: calc(0.6rem + 0.8rem);
-}
-.inputs > .entry::after {
-  content: '';
-  position: absolute;
-  left: calc(-1 * var(--indent) + 0.5rem);
-  top: calc(0.6rem + 0.8rem);
-  width: var(--tick);
-  border-top: 2px solid var(--rail);
-}
 
 .material {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
+  padding-left: 1.4rem;
   line-height: 1.6;
+}
+.material::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--x) - 0.375rem);
+  top: calc(var(--dot-y) - 0.375rem);
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 2px solid var(--muted);
+}
+.root > .material::before {
+  background: var(--good);
+  border-color: var(--good);
 }
 .amount {
   font-weight: 600;
@@ -182,11 +183,53 @@ function doer(): string | undefined {
   font-size: 1.125rem;
 }
 .step {
-  padding-left: 0.1rem;
+  position: relative;
+  padding-left: 1.4rem;
   font-size: 0.9375rem;
   color: var(--muted);
   max-width: var(--measure);
 }
+
+/* The line down from the inputs into this entry: through its step rows, then to its dot. */
+.fed > .step::before,
+.fed > .material::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--x) - 1px);
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--rail);
+}
+.fed > .material::after {
+  bottom: auto;
+  height: var(--dot-y);
+}
+/* Each input entry carries the line alongside itself (from its own dot, for the first one). */
+.inputs > .entry::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--x) - var(--indent) - 1px);
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--rail);
+}
+.inputs > .entry:first-child::before {
+  top: auto;
+  height: calc(var(--dot-y) + 0.6rem);
+}
+/* The tick from the line to an input's dot. */
+.inputs > .entry > .material::before {
+  z-index: 1;
+}
+.inputs > .entry > .material > .amount::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--x) - var(--indent));
+  top: calc(var(--dot-y) - 1px);
+  width: var(--indent);
+  border-top: 2px solid var(--rail);
+}
+
 .how {
   color: var(--accent);
 }
