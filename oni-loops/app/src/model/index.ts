@@ -36,6 +36,7 @@ export function allTargets(): Target[] {
     const list: Target[] = []
     for (const e of gameData.elements) {
       if (e.disabled || e.id === 'Vacuum' || e.id === 'Void' || e.id === 'Unobtanium') continue
+      if (!g.obtainable.has(e.id)) continue // debug-only, like Pyrite
       list.push({ tag: e.id, name: e.name, kind: e.state })
     }
     for (const it of gameData.items) {

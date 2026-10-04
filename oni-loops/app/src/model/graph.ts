@@ -104,6 +104,8 @@ export interface Graph {
   kinds: Map<string, string>
   /** Elements that only exist above 500 °C (Molten Steel, Magma): bringing one from outside is not a plan. */
   hotOnly: Set<string>
+  /** Elements some world, geyser, space rock, or process provides; the rest are debug-only. */
+  obtainable: Set<string>
 }
 
 /** The input flow of `p` that `tag` satisfies, if any. */
@@ -650,6 +652,36 @@ export function buildGraph(d: GameData): Graph {
       })
   }
 
+  // An element no world holds, no geyser or space rock gives, and no process makes (Pyrite,
+  // Electrum) exists only in debug mode: it is not a choice for an input, and a process that
+  // needs it can never run.
+  const obtainable = new Set<string>()
+  for (const w of d.worldgen) for (const el of w.elements) obtainable.add(el)
+  for (const g of d.geysers) obtainable.add(g.element)
+  for (const poi of d.spacePois) for (const el of Object.keys(poi.elements)) obtainable.add(el)
+  for (const s of d.spaceDestinations ?? [])
+    for (const el of Object.keys(s.elements)) obtainable.add(el)
+  for (const p of processes) for (const o of p.outputs) obtainable.add(o.tag)
+  const exists = (tag: string) => !elementIds.has(tag) || obtainable.has(tag)
+  const runnable: Process[] = []
+  for (const p of processes) {
+    let possible = true
+    const inputs: Flow[] = []
+    for (const f of p.inputs) {
+      if (!f.anyOf) {
+        if (!exists(f.tag)) possible = false
+        inputs.push(f)
+        continue
+      }
+      const options = f.anyOf.filter(exists)
+      if (options.length === 0) possible = false
+      else inputs.push({ ...f, tag: options[0]!, anyOf: options.length > 1 ? options : undefined })
+    }
+    if (possible) runnable.push(inputs === p.inputs ? p : { ...p, inputs })
+  }
+  processes.length = 0
+  processes.push(...runnable)
+
   const byOutput = new Map<string, Process[]>()
   const byInput = new Map<string, Process[]>()
   for (const p of processes) {
@@ -660,7 +692,16 @@ export function buildGraph(d: GameData): Graph {
   const hotOnly = new Set(
     d.elements.filter((e) => !e.disabled && (e.lowTemp ?? 0) > EXTREME_HOT_K).map((e) => e.id),
   )
-  return { processes, byOutput, byInput, critters, elements: elementIds, kinds, hotOnly }
+  return {
+    processes,
+    byOutput,
+    byInput,
+    critters,
+    elements: elementIds,
+    kinds,
+    hotOnly,
+    obtainable,
+  }
 }
 
 function push(map: Map<string, Process[]>, key: string, p: Process) {
