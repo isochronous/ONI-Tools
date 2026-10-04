@@ -572,9 +572,12 @@ namespace OniDataDump
 					o["needsPollination"] = true;
 				// A flytrap (the Lura Plant, the Saturn Critter Trap) pauses growing until it has eaten
 				// one critter of the kinds it accepts, so each harvest costs one of them.
+				// GetPrefabsOfPossiblePrey() also asks whether each prey's DLC is active for the
+				// current save, and at the main menu there is none, so the edibility test is run
+				// here over every critter instead.
 				IPlantConsumeEntities trap = prefab.GetComponent<IPlantConsumeEntities>();
 				if (trap != null)
-					o["prey"] = new JArray(trap.GetPrefabsOfPossiblePrey().Select(k => k.PrefabTag.ToString()));
+					o["prey"] = new JArray(Assets.GetPrefabsWithComponent<CreatureBrain>().Where(trap.IsEntityEdible).Select(c => c.GetComponent<KPrefabID>().PrefabTag.ToString()));
 				arr.Add(o);
 			}
 			// Vine mothers (the Ovagro Node) have no Growing or Crop of their own: they sprout up to

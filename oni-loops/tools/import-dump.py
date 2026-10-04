@@ -56,11 +56,17 @@ if "--no-icons" not in sys.argv and os.path.isdir(icons):
     wanted |= {b["id"] for b in d["buildings"]} | {f for r in d["recipes"] for f in r["fabricators"]}
     wanted |= {c["id"] for c in d["critters"]} | {p["id"] for p in d["plants"]}
     wanted |= {it["id"] for it in d["items"] if '"%s"' % it["id"] in body}
-    tags = sorted(wanted & exported)
-    if os.path.isdir(dest):
-        shutil.rmtree(dest)
-    os.makedirs(dest)
-    for tag in tags:
+    # The icon folder holds the latest run only, and a base-game run lacks Spaced Out's things,
+    # so icons already imported are kept; the manifest is what the app wants and has.
+    os.makedirs(dest, exist_ok=True)
+    kept = {f[:-4] for f in os.listdir(dest) if f.endswith(".png")}
+    for tag in sorted(wanted & exported):
         shutil.copyfile(os.path.join(icons, tag + ".png"), os.path.join(dest, tag + ".png"))
-    json.dump(sorted(tags), open(os.path.join(root, "data", "icons.json"), "w", encoding="utf-8"))
-    print("copied", len(tags), "of", len(exported), "icons to", dest, "; wanted but missing:", sorted(wanted - exported)[:40], len(wanted - exported))
+    have = (wanted & exported) | (wanted & kept)
+    for f in os.listdir(dest):
+        if f.endswith(".png") and f[:-4] not in have:
+            os.remove(os.path.join(dest, f))
+    old = set(json.load(open(os.path.join(root, "data", "icons.json"), encoding="utf-8"))) if os.path.exists(os.path.join(root, "data", "icons.json")) else set()
+    manifest = sorted(have | (old & kept))
+    json.dump(manifest, open(os.path.join(root, "data", "icons.json"), "w", encoding="utf-8"))
+    print("copied", len(wanted & exported), "of", len(exported), "icons to", dest, "; manifest", len(manifest), "; wanted but missing:", sorted(wanted - have)[:40], len(wanted - have))
