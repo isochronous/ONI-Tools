@@ -52,7 +52,7 @@ function show(n: Node, depth: number) {
     if (i.node) show(i.node, depth + 1)
     else
       console.log(
-        `${pad}  ${fmt(i.amount)} ${label(i.tag)}${i.feedback ? ' (fed back)' : ` [${i.tier}]`}`,
+        `${pad}  ${fmt(i.amount)} ${label(i.tag)}${i.feedback ? ' (fed back)' : i.reused ? ' (left by ' + i.reusedFrom!.map((f) => f.process.via).join('/') + ')' : ` [${i.tier}]`}`,
       )
   }
   console.log(

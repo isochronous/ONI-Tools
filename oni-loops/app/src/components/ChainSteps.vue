@@ -126,12 +126,18 @@ function needs(extras: string[] | undefined): string {
   return text.charAt(0).toUpperCase() + text.slice(1) + '.'
 }
 
-/** Other outputs of the step, per cycle. */
+/** Other outputs of the step, per cycle, noting any part another step of the chain uses. */
 function leaving(n: Node): string {
   return list(
     n.process.outputs
       .filter((f) => f.tag !== n.output)
-      .map((f) => qty(at(f.amount * n.runs), f.tag)),
+      .map((f) => {
+        const used = (n.reusedOut ?? []).filter((r) => r.tag === f.tag)
+        const text = qty(at(f.amount * n.runs), f.tag)
+        if (!used.length) return text
+        const total = used.reduce((sum, r) => sum + r.amount, 0)
+        return `${text} (${fmt(at(total))} of it for ${list([...new Set(used.map((r) => r.by.process.via))])})`
+      }),
   )
 }
 
@@ -142,7 +148,18 @@ function gathered(n: Node): string {
 }
 
 function outside(n: Node): Input[] {
-  return n.inputs.filter((i) => !i.node && !i.feedback)
+  return n.inputs.filter((i) => !i.node && !i.feedback && !i.reused)
+}
+
+/** Inputs covered, wholly or partly, by what other steps of the chain leave: "1.56 Meat left by Dartle". */
+function reusedText(n: Node): string {
+  const parts = n.inputs
+    .filter((i) => i.reused)
+    .map(
+      (i) =>
+        `${qty(at(i.reused!), i.tag)} left by ${list([...new Set(i.reusedFrom!.map((f) => f.process.via))])}`,
+    )
+  return list(parts)
 }
 
 /**
@@ -211,8 +228,11 @@ function doer(n: Node): string | undefined {
             ><template v-if="gathered(row.node)">{{
               ' takes ' + gathered(row.node) + ' from above'
             }}</template
+            ><template v-if="reusedText(row.node)">{{
+              (gathered(row.node) ? ' plus ' : ' with ') + reusedText(row.node)
+            }}</template
             ><template v-if="outside(row.node).length"
-              >{{ gathered(row.node) ? ' plus ' : ' with '
+              >{{ gathered(row.node) || reusedText(row.node) ? ' plus ' : ' with '
               }}<template v-for="(i, k) in outside(row.node)" :key="i.tag"
                 ><template v-if="k > 0">{{
                   k === outside(row.node).length - 1 ? ' and ' : ', '

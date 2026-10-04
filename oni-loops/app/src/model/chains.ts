@@ -31,6 +31,10 @@ export interface Input {
   node?: Node
   /** True when this is the chain's own product fed back in. */
   feedback?: boolean
+  /** Amount covered by what another step of this chain leaves (a Dartle's meat feeding the Rhex). */
+  reused?: number
+  /** The steps whose leftovers cover `reused`. */
+  reusedFrom?: Node[]
   /** How reachable the colony finds it; for an input made by a sub-chain, that chain's worst. */
   tier: Tier
 }
@@ -50,6 +54,12 @@ export interface Node {
   size: number
   /** Other processes that make the same output from the same inputs in the same proportions. */
   alternatives?: Process[]
+  /** Leftovers of this step that other steps of the chain use, per unit of target. */
+  reusedOut?: { tag: string; amount: number; by: Node }[]
+  /** @internal The shape this node was built from, to rebuild it at another amount. */
+  shape?: Shape
+  /** @internal The process's own cost when it is a source. */
+  ownTier?: Tier
 }
 
 /**
@@ -541,11 +551,13 @@ export function findChains(
   for (const shape of byMaterials.values()) {
     const net = 1 / (1 - shape.feedback)
     const root = materialise(shape, net)
+    reuseLeftovers(root)
+    const after = retier(root)
     const chain: Chain = {
       target,
       root,
-      worstTier: shape.tier,
-      size: shape.size,
+      worstTier: after.tier,
+      size: after.size,
       feedback: shape.feedback,
       needs: [],
       makes: [],
@@ -582,7 +594,87 @@ function materialise(shape: Shape, amount: number): Node {
     tier: shape.tier,
     size: shape.size,
     alternatives: shape.alternatives.length ? shape.alternatives : undefined,
+    shape,
+    ownTier: shape.ownTier,
   }
+}
+
+/**
+ * A step's leftovers can feed another step of the same chain: a Dartle ranch leaves meat, and
+ * the Rhex that makes its plants' fertilizer eats meat, so the Nosh Sprout and Bammoth that
+ * fed the Rhex are not needed. Each input nothing else covers is checked against what the
+ * rest of the chain leaves; a covered input loses its sub-chain, a partly covered one keeps
+ * a smaller one. Repeats until nothing more can be covered.
+ */
+function reuseLeftovers(root: Node) {
+  for (let pass = 0; pass < 8; pass++) {
+    const nodes = collect(root)
+    // What each step leaves, less what is already taken from it.
+    const left = new Map<Node, Map<string, number>>()
+    for (const n of nodes) {
+      const m = new Map<string, number>()
+      for (const f of n.process.outputs)
+        if (f.tag !== n.output) m.set(f.tag, (m.get(f.tag) ?? 0) + f.amount * n.runs)
+      for (const r of n.reusedOut ?? []) m.set(r.tag, (m.get(r.tag) ?? 0) - r.amount)
+      left.set(n, m)
+    }
+    let changed = false
+    for (const consumer of nodes) {
+      for (const input of consumer.inputs) {
+        if (input.feedback || input.reused || input.anyOfName) continue
+        const wanted = input.amount
+        // Leftovers from steps that are not inside the sub-chain this input would drop.
+        const inside = new Set(input.node ? collect(input.node) : [])
+        const sources = nodes.filter(
+          (n) => n !== consumer && !inside.has(n) && (left.get(n)?.get(input.tag) ?? 0) > 1e-9,
+        )
+        if (!sources.length) continue
+        let covered = 0
+        const from: Node[] = []
+        for (const n of sources) {
+          const available = left.get(n)!.get(input.tag)!
+          const take = Math.min(available, wanted - covered)
+          if (take <= 1e-9) continue
+          left.get(n)!.set(input.tag, available - take)
+          n.reusedOut = [...(n.reusedOut ?? []), { tag: input.tag, amount: take, by: consumer }]
+          from.push(n)
+          covered += take
+          if (wanted - covered <= 1e-9) break
+        }
+        if (covered <= 1e-9) continue
+        input.reused = covered
+        input.reusedFrom = from
+        if (wanted - covered <= 1e-9) {
+          input.node = undefined
+          input.tier = 'renewable'
+        } else if (input.node?.shape) input.node = materialise(input.node.shape, wanted - covered)
+        changed = true
+      }
+    }
+    if (!changed) return
+  }
+}
+
+function collect(n: Node): Node[] {
+  const out: Node[] = [n]
+  for (const i of n.inputs) if (i.node) out.push(...collect(i.node))
+  return out
+}
+
+/** Recomputes a node's subtree tier and size after reuse removed or shrank sub-chains. */
+function retier(n: Node): { tier: Tier; size: number } {
+  let tier: Tier = n.ownTier ?? 'renewable'
+  let size = 1
+  for (const i of n.inputs) {
+    if (i.node) {
+      const sub = retier(i.node)
+      tier = worse(tier, sub.tier)
+      size += sub.size
+    } else tier = worse(tier, i.feedback || i.reused ? 'renewable' : i.tier)
+  }
+  n.tier = tier
+  n.size = size
+  return { tier, size }
 }
 
 /** Nets what the chain takes from outside and makes besides the target, and finds its Duplicant ceiling. */
@@ -597,9 +689,10 @@ function summarise(chain: Chain, colony: Colony, perCycle: number) {
       if (f.tag === n.output) continue
       makes.set(f.tag, (makes.get(f.tag) ?? 0) + f.amount * n.runs)
     }
+    for (const r of n.reusedOut ?? []) makes.set(r.tag, (makes.get(r.tag) ?? 0) - r.amount)
     for (const i of n.inputs) {
       if (i.node) visit(i.node)
-      else if (!i.feedback) {
+      else if (!i.feedback && !i.reused) {
         const seen = needs.get(i.tag)
         if (seen) seen.amount += i.amount
         else needs.set(i.tag, { ...i })
@@ -625,7 +718,7 @@ function summarise(chain: Chain, colony: Colony, perCycle: number) {
   visit(chain.root)
   chain.needs = [...needs.values()].sort((a, b) => b.amount - a.amount)
   chain.makes = [...makes]
-    .filter(([tag]) => tag !== chain.target)
+    .filter(([tag, amount]) => tag !== chain.target && amount > 1e-9)
     .map(([tag, amount]) => ({ tag, amount }))
     .sort((a, b) => b.amount - a.amount)
 }
