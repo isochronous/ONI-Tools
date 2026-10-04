@@ -551,6 +551,9 @@ namespace OniDataDump
 		private static JArray PlantMutations()
 		{
 			var arr = new JArray();
+			// Mutations came with Spaced Out; without it the table is absent.
+			if (Db.Get().PlantMutations == null || Db.Get().PlantAttributes == null)
+				return arr;
 			string yieldId = Db.Get().PlantAttributes.YieldAmount.Id;
 			string usageId = Db.Get().PlantAttributes.FertilizerUsageMod.Id;
 			string growthId = Db.Get().Amounts.Maturity.maxAttribute.Id;
