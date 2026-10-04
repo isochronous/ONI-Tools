@@ -45,9 +45,10 @@ function rows(node: Node, isRoot: boolean): Row[] {
     })
     out.push({ kind: 'join' })
   }
-  // A loop starts with the product it feeds itself, as its own line.
+  // What a step gets from the chain itself, the product fed back or another step's leftovers,
+  // is its own line above the step, like any other material.
   for (const i of node.inputs)
-    if (i.feedback) out.push({ kind: 'feedback', node, rail: 'none', input: i })
+    if (i.feedback || i.reused) out.push({ kind: 'feedback', node, rail: 'none', input: i })
   out.push({ kind: 'step', node, rail: 'none' })
   if (!isRoot) out.push({ kind: 'material', node, rail: 'none' })
   return out
@@ -151,15 +152,9 @@ function outside(n: Node): Input[] {
   return n.inputs.filter((i) => !i.node && !i.feedback && !i.reused)
 }
 
-/** Inputs covered, wholly or partly, by what other steps of the chain leave: "1.56 Meat left by Dartle". */
-function reusedText(n: Node): string {
-  const parts = n.inputs
-    .filter((i) => i.reused)
-    .map(
-      (i) =>
-        `${qty(at(i.reused!), i.tag)} left by ${list([...new Set(i.reusedFrom!.map((f) => f.process.via))])}`,
-    )
-  return list(parts)
+/** Who leaves what an input reuses: "Dartle", or "Dartle and Rhex". */
+function leftBy(i: Input): string {
+  return list([...new Set((i.reusedFrom ?? []).map((f) => f.process.via))])
 }
 
 /**
@@ -228,11 +223,8 @@ function doer(n: Node): string | undefined {
             ><template v-if="gathered(row.node)">{{
               ' takes ' + gathered(row.node) + ' from above'
             }}</template
-            ><template v-if="reusedText(row.node)">{{
-              (gathered(row.node) ? ' plus ' : ' with ') + reusedText(row.node)
-            }}</template
             ><template v-if="outside(row.node).length"
-              >{{ gathered(row.node) || reusedText(row.node) ? ' plus ' : ' with '
+              >{{ gathered(row.node) ? ' plus ' : ' with '
               }}<template v-for="(i, k) in outside(row.node)" :key="i.tag"
                 ><template v-if="k > 0">{{
                   k === outside(row.node).length - 1 ? ' and ' : ', '
@@ -260,9 +252,15 @@ function doer(n: Node): string | undefined {
           </template>
           <template v-else-if="row.kind === 'feedback'">
             <span class="amount num"
-              ><TagIcon :tag="row.input!.tag" />{{ inputText(row.input!) }}</span
+              ><TagIcon :tag="row.input!.tag" />{{
+                row.input!.feedback
+                  ? inputText(row.input!)
+                  : qty(at(row.input!.reused!), row.input!.tag)
+              }}</span
             >
-            <span class="fed-back">from what this loop makes</span>
+            <span class="fed-back">{{
+              row.input!.feedback ? 'from what this loop makes' : 'left by ' + leftBy(row.input!)
+            }}</span>
           </template>
           <span v-else class="amount num"
             ><TagIcon :tag="row.node.output" />{{ qty(at(row.node.amount), row.node.output) }}</span
