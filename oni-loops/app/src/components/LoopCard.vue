@@ -60,6 +60,12 @@ function into(i: number): number {
   return amount
 }
 
+/** What the loop itself brings to step `i`: everything arriving there minus any top-up fed in at that step. */
+function own(i: number): number {
+  const t = props.loop.topUp
+  return t && t.step === i ? into(i) - run.value.topUpAmount : into(i)
+}
+
 /** "0.045 kg Sand", or "0.5 kg of any seed" for an input that takes several things. */
 function flowText(f: Flow): string {
   if (!f.anyOf) return qty(f.amount, f.tag)
@@ -137,11 +143,12 @@ function needs(extras: string[] | undefined): string {
     <ol class="chain">
       <li v-for="(s, i) in loop.steps" :key="i" class="step">
         <p class="node">
-          <span class="amount num"><TagIcon :tag="s.from" />{{ qty(into(i), s.from) }}</span>
-          <span v-if="loop.topUp && loop.topUp.step === i && run.topUpAmount > 0" class="added"
-            >of which {{ qty(run.topUpAmount, s.from) }} is added from outside ({{
-              TIER_LABEL[loop.topUp.tier]
-            }})</span
+          <span class="amount num"><TagIcon :tag="s.from" />{{ qty(own(i), s.from) }}</span>
+          <span
+            v-if="loop.topUp && loop.topUp.step === i && run.topUpAmount > 0"
+            class="added num"
+            :title="`${label(s.from)} is ${TIER_LABEL[loop.topUp.tier]} for your colony: ${tiers.reason(s.from)}`"
+            >+ {{ fmt(run.topUpAmount) }}{{ unitOf(s.from) }} provided separately</span
           >
         </p>
         <p class="via">
