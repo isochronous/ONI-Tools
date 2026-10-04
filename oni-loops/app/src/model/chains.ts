@@ -110,7 +110,7 @@ function dlcLabel(id: string) {
   return dlcNames[id] ?? id
 }
 
-const MAX_DEPTH = 6
+const MAX_DEPTH = 8
 
 /** A chain's structure before amounts are known; shared between chains through the memo. */
 interface Shape {
@@ -163,9 +163,10 @@ function worse(a: Tier, b: Tier): Tier {
 }
 
 /**
- * Of two shapes making the same thing, the one to prefer: one a colony would build (within
- * the allowance at the asked rate), then the easier tier (the target fed back counts as
- * renewable: a loop is a fine way to make more of something), then fewer
+ * Of two shapes making the same thing, the one to prefer: one that does not feed on the
+ * target (loops are found on purpose by the forward search; as a default input choice the
+ * target fed back tends to make a chain eat more than it makes), then one a colony would
+ * build (within the allowance at the asked rate), then the easier tier, then fewer
  * processes, then less scale (a Gnit every 4.5 cycles over a Puft every 45), then one that
  * pipes its product out, then a building over an in-world phase change (a Kiln leads, "or
  * heated in-world" follows), then fewer DLCs.
@@ -174,6 +175,7 @@ function compareShapes(a: Shape, b: Shape): number {
   return (
     Number(a.impractical) - Number(b.impractical) ||
     Number(a.incidental) - Number(b.incidental) ||
+    Number(a.feedback > 0) - Number(b.feedback > 0) ||
     Number(a.strain > 1) - Number(b.strain > 1) ||
     TIER_ORDER[a.tier] - TIER_ORDER[b.tier] ||
     a.size - b.size ||
@@ -316,6 +318,8 @@ export function findChains(
 
   function betterInput(a: ShapeInput, b: ShapeInput): boolean {
     const d =
+      Number(!!a.feedback || (a.shape?.feedback ?? 0) > 0) -
+        Number(!!b.feedback || (b.shape?.feedback ?? 0) > 0) ||
       Number((a.shape?.strain ?? 0) > 1) - Number((b.shape?.strain ?? 0) > 1) ||
       TIER_ORDER[a.tier] - TIER_ORDER[b.tier] ||
       (a.shape?.size ?? 0) - (b.shape?.size ?? 0) ||
@@ -458,6 +462,7 @@ export function findChains(
   function forwardLoops(): Shape[] {
     const found: Shape[] = []
     const MAX_LOOPS = 60
+    let limit = 2
     const walk = (
       current: string,
       path: { p: Process; from: string; to: string }[],
@@ -471,17 +476,19 @@ export function findChains(
           if (o.amount <= 0) continue
           const step = { p, from: current, to: o.tag }
           if (o.tag === target) {
-            if (path.length === 0) continue // X straight back to X is no loop
+            // Only loops of exactly the current length, so shorter ones come first.
+            if (path.length + 1 !== limit) continue
             const shape = loopShape([...path, step])
             if (shape) found.push(shape)
             continue
           }
-          if (path.length + 1 >= MAX_DEPTH || visited.has(o.tag)) continue
+          if (path.length + 1 >= limit || visited.has(o.tag)) continue
           walk(o.tag, [...path, step], new Set([...visited, o.tag]))
         }
       }
     }
-    walk(target, [], new Set([target]))
+    for (limit = 2; limit <= MAX_DEPTH && found.length < MAX_LOOPS; limit++)
+      walk(target, [], new Set([target]))
     return found
   }
 
@@ -636,8 +643,9 @@ export function nodesOf(chain: Chain): Node[] {
  * Routes needing extreme in-world temperatures last of all, then routes a colony would not
  * build at the asked rate (over fifty plants, thirty critters, or ten buildings at one step);
  * otherwise easiest leaves first (a chain fed by geysers beats one needing a rocket), then chains the
- * colony's Duplicants can run at the asked rate, then loops (a chain that turns some of its
- * own product into more of it is the best kind), then shorter, then needing less from outside.
+ * colony's Duplicants can run at the asked rate, then shorter, with a loop (a chain that turns
+ * some of its own product into more of it) counting as two steps shorter, then needing less
+ * from outside.
  */
 export function compareChains(a: Chain, b: Chain): number {
   return (
@@ -645,10 +653,15 @@ export function compareChains(a: Chain, b: Chain): number {
     Number(a.strain > 1) - Number(b.strain > 1) ||
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
     Number(a.capped ?? false) - Number(b.capped ?? false) ||
-    Number(b.feedback > 0) - Number(a.feedback > 0) ||
-    a.size - b.size ||
+    effectiveSize(a) - effectiveSize(b) ||
     cost(a) - cost(b)
   )
+}
+
+/** A loop turns some of its product into more of it, which is worth about two steps of brevity. */
+const LOOP_CREDIT = 2
+function effectiveSize(chain: Chain): number {
+  return chain.size - (chain.feedback > 0 ? LOOP_CREDIT : 0)
 }
 
 /** Outside input per unit of target, as a rough single number (kg and item counts added as-is). */
