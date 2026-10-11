@@ -35,6 +35,11 @@ namespace OniDataDump
 			string path = Path.Combine(Util.RootFolder(), "oni-data-dump." + Dump.Flavour() + ".json");
 			try
 			{
+				// Global starts WorldGen.LoadSettings on a worker thread at boot; it logs "World settings
+				// reload complete!" and then keeps going, preloading templates into TemplateCache. Reading
+				// SettingsCache and TemplateCache while that runs throws "Collection was modified", and an
+				// error log with a stack trace makes the game blame this mod and offer a restart. Join it.
+				ProcGenGame.WorldGen.WaitForPendingLoadSettings();
 				Dump.WriteTo(path);
 				Debug.Log("[OniDataDump] Wrote " + path);
 				// Icons do not depend on the DLC set beyond which things exist, so one folder serves every flavour.
@@ -44,7 +49,9 @@ namespace OniDataDump
 			}
 			catch (Exception e)
 			{
-				Debug.LogError("[OniDataDump] Dump failed: " + e);
+				// A warning without the stack trace: the game only blames mods for errors that carry one.
+				Debug.LogWarning("[OniDataDump] Dump failed: " + e.GetType().Name + ": " + e.Message);
+				Debug.Log("[OniDataDump] Dump failure detail: " + e);
 			}
 		}
 	}
