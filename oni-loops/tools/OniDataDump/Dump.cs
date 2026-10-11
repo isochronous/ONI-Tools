@@ -651,9 +651,75 @@ namespace OniDataDump
 						["seconds"] = scales.defaultGrowthRate > 0f ? 1f / scales.defaultGrowthRate : 0f,
 					};
 				}
+				// Calorie-driven milking (Gassy Moo, Husky Moo, Glo Squid): eating extends a well-fed
+				// effect that raises the MilkProduction amount by ratePercentPerSecond out of 100; at
+				// 100 the critter asks for a Milking Station, which drains capacity kg of the element.
+				// Each caloriesPerCycle kcal eaten buys 600 s of the effect.
+				MilkProductionMonitor.Def milk = prefab.GetDef<MilkProductionMonitor.Def>();
+				if (milk != null)
+				{
+					// The Gassy Moo leaves effectId null and gets the effect from its beckoning monitor.
+					string effectId = milk.effectId ?? prefab.GetDef<BeckoningMonitor.Def>()?.effectId;
+					o["milk"] = new JObject
+					{
+						["element"] = milk.element.ToString(),
+						["capacity"] = milk.Capacity,
+						["caloriesPerCycle"] = milk.CaloriesPerCycle,
+						["effect"] = effectId,
+						["ratePercentPerSecond"] = EffectDelta(effectId, Db.Get().Amounts.MilkProduction),
+					};
+				}
+				// Fertility-driven milking (Seaquine): a milking drops dropMass kg of the element and
+				// spends fertilityConsumed of the fertility bar, so it costs eggs. Only above minFertility.
+				FertilityShearable.Def fertilityMilk = prefab.GetDef<FertilityShearable.Def>();
+				if (fertilityMilk != null)
+				{
+					o["fertilityMilk"] = new JObject
+					{
+						["element"] = fertilityMilk.milkElement.ToString(),
+						["mass"] = fertilityMilk.dropMass,
+						["minFertility"] = fertilityMilk.minimumFertility,
+						["fertilityConsumed"] = fertilityMilk.percentFertilityConsumedPerMilking,
+						["requiresHappy"] = fertilityMilk.requiresHappy,
+					};
+				}
+				// Well-fed shearables (Flox antlers, Shatter Flox glass, Rhex feathers, Orehull shell,
+				// Bammoth fibre, Regal Bammoth gold): the same well-fed effect raises ScaleGrowth, and
+				// at full growth (growthCycles of being fed) the critter is sheared for mass kg of the item.
+				// requiredDiet, when set, is the only food that counts.
+				WellFedShearable.Def wellFed = prefab.GetDef<WellFedShearable.Def>();
+				if (wellFed != null)
+				{
+					o["wellFedShear"] = new JObject
+					{
+						["item"] = wellFed.itemDroppedOnShear.ToString(),
+						["mass"] = wellFed.dropMass,
+						["growthCycles"] = wellFed.growthDurationCycles,
+						["levels"] = wellFed.levelCount,
+						["caloriesPerCycle"] = wellFed.caloriesPerCycle,
+						["effect"] = wellFed.effectId,
+						["ratePercentPerSecond"] = EffectDelta(wellFed.effectId, Db.Get().Amounts.ScaleGrowth),
+						["requiredDiet"] = wellFed.requiredDiet != null && wellFed.requiredDiet != Tag.Invalid ? wellFed.requiredDiet.ToString() : null,
+					};
+				}
 				arr.Add(o);
 			}
 			return arr;
+		}
+
+		/// <summary>
+		/// The per-second change an effect applies to an amount (its delta attribute), or 0 when
+		/// the effect is unknown or does not touch it.
+		/// </summary>
+		private static float EffectDelta(string effectId, Klei.AI.Amount amount)
+		{
+			if (string.IsNullOrEmpty(effectId))
+				return 0f;
+			Klei.AI.Effect effect = Db.Get().effects.TryGet(effectId);
+			if (effect == null)
+				return 0f;
+			string deltaId = amount.deltaAttribute.Id;
+			return effect.SelfModifiers.Where(m => m.AttributeId == deltaId && !m.IsMultiplier).Sum(m => m.Value);
 		}
 
 		/// <summary>
@@ -738,6 +804,11 @@ namespace OniDataDump
 				IPlantConsumeEntities trap = prefab.GetComponent<IPlantConsumeEntities>();
 				if (trap != null)
 					o["prey"] = new JArray(Assets.GetPrefabsWithComponent<CreatureBrain>().Where(trap.IsEntityEdible).Select(c => c.GetComponent<KPrefabID>().PrefabTag.ToString()));
+				// A critter that eats the living plant (a Glo Squid at a Tublia, a Drecko at a Mealwood)
+				// takes its growth rather than its harvest; what the plant regrows per cycle is here.
+				JArray grazing = Grazing(prefab);
+				if (grazing.Count > 0)
+					o["grazing"] = grazing;
 				arr.Add(o);
 			}
 			// Vine mothers (the Ovagro Node) have no Growing or Crop of their own: they sprout up to
@@ -770,6 +841,68 @@ namespace OniDataDump
 				if (seeds != null)
 					o["seed"] = new JObject { ["item"] = seeds.seedInfo.seedId, ["productionType"] = seeds.seedInfo.productionType.ToString(), ["count"] = seeds.seedInfo.newSeedsProduced * seeds.seedDropChanceMultiplier * def.MAX_BRANCH_COUNT };
 				arr.Add(o);
+			}
+			return arr;
+		}
+
+		/// <summary>
+		/// How critters with an EatPlantDirectly or EatPlantStorage diet feed from this plant, from the
+		/// game's own consumption instructions. Diets price such food per unit, and a unit is:
+		/// growth: one unit of maturity, which a tended plant grows at GROWTH_RATE per second (one a
+		/// cycle for every plant in the game) and a wild one at WILD_GROWTH_RATE; a mutant with a
+		/// longer growth time holds more maturity per unit, so it yields fewer units a cycle.
+		/// branches: the same, summed over every branch the tree can carry at once (an Arbor Tree).
+		/// storage: kilograms of the element the plant keeps in itself (a Bonbon Tree's sugar water).
+		/// </summary>
+		private static JArray Grazing(GameObject prefab)
+		{
+			var arr = new JArray();
+			foreach (IPlantConsumptionInstructions instructions in GameUtil.GetPlantConsumptionInstructions(prefab))
+			{
+				switch (instructions)
+				{
+					case DirectlyEdiblePlant_Growth _:
+					{
+						Growing growing = prefab.GetComponent<Growing>();
+						if (growing == null)
+							break;
+						arr.Add(new JObject
+						{
+							["kind"] = "growth",
+							["unitsPerCycle"] = growing.GROWTH_RATE * 600f,
+							["wildUnitsPerCycle"] = growing.WILD_GROWTH_RATE * 600f,
+							["minMaturity"] = 0.25f, // CanPlantBeEaten: at least a quarter grown
+						});
+						break;
+					}
+					case DirectlyEdiblePlant_TreeBranches branches:
+					{
+						PlantBranchGrower.Def def = prefab.GetDef<PlantBranchGrower.Def>();
+						GameObject branch = def?.BRANCH_PREFAB_NAME != null ? Assets.GetPrefab(def.BRANCH_PREFAB_NAME) : null;
+						Growing growing = branch?.GetComponent<Growing>();
+						if (def?.BRANCH_OFFSETS == null || growing == null)
+							break;
+						int count = def.MAX_BRANCH_COUNT >= 0 ? Math.Min(def.MAX_BRANCH_COUNT, def.BRANCH_OFFSETS.Length) : def.BRANCH_OFFSETS.Length;
+						arr.Add(new JObject
+						{
+							["kind"] = "branches",
+							["unitsPerCycle"] = growing.GROWTH_RATE * 600f * count,
+							["wildUnitsPerCycle"] = growing.WILD_GROWTH_RATE * 600f * count,
+							["branches"] = count,
+							["minMaturity"] = branches.MinimumEdibleMaturity,
+						});
+						break;
+					}
+					case DirectlyEdiblePlant_StorageElement stored:
+						arr.Add(new JObject
+						{
+							["kind"] = "storage",
+							["tag"] = stored.tagToConsume.ToString(),
+							["unitsPerCycle"] = stored.MassGeneratedPerCycle,
+							["minMaturity"] = stored.minimum_mass_percentageRequiredToEat,
+						});
+						break;
+				}
 			}
 			return arr;
 		}
