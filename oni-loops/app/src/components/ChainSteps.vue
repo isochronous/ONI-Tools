@@ -288,7 +288,7 @@ function countText(n: Node, process: Process = n.process): string {
  * Dew Dripper" or "used to irrigate Bristle Blossom".
  */
 function stepText(n: Node): string {
-  if (n.process.kind !== 'crop') return stepLabel(n.process)
+  if (n.process.kind !== 'crop' && n.process.kind !== 'graze') return stepLabel(n.process)
   const roles = new Set(n.inputs.filter((i) => i.node && i.role).map((i) => i.role!))
   if (roles.size === 0) return stepLabel(n.process)
   const verbs: string[] = []

@@ -154,6 +154,39 @@ export interface CritterData {
     /** Seconds for a tame critter to regrow its scales. */
     seconds?: number
   }
+  /**
+   * Calorie-driven milking (Gassy Moo, Husky Moo, Glo Squid): eating keeps a well-fed effect
+   * going that fills a milk amount by ratePercentPerSecond out of 100; at 100 the critter asks
+   * for a Milking Station, which drains capacity kg of the element.
+   */
+  milk?: {
+    element: string
+    capacity: number
+    /** Each this many kcal eaten buys 600 s of production. */
+    caloriesPerCycle: number
+    effect?: string
+    ratePercentPerSecond: number
+  }
+  /** Fertility-driven milking (Seaquine): a milking drops mass kg and spends fertilityConsumed of the fertility bar. */
+  fertilityMilk?: {
+    element: string
+    mass: number
+    minFertility: number
+    fertilityConsumed: number
+    requiresHappy: boolean
+  }
+  /** Well-fed shearing (Flox antlers, Rhex feathers, Orehull shell): fed for growthCycles, then sheared for mass kg. */
+  wellFedShear?: {
+    item: string
+    mass: number
+    growthCycles: number
+    levels: number
+    caloriesPerCycle: number
+    effect?: string
+    ratePercentPerSecond: number
+    /** Only this food counts as being fed, when set. */
+    requiredDiet?: string | null
+  }
   /** Cycles until it dies of old age. */
   lifespanCycles?: number
 }
@@ -173,6 +206,27 @@ export interface PlantData {
   needsPollination?: boolean
   /** Critter prefab ids a flytrap plant eats, one per harvest, when it is one. */
   prey?: string[]
+  /** How critters that eat the living plant feed from it. Absent in older dumps. */
+  grazing?: GrazingData[]
+}
+
+/**
+ * A way of eating the plant itself (a Drecko at a Mealwood, a Pip at an Arbor Tree's branches,
+ * a Pipsqueak at a Bonbon Tree). Diets price such food per unit: a unit of growth is one cycle
+ * of a tended plant's maturity (branches: of all its branches together); storage is kilograms
+ * of `tag` the plant holds.
+ */
+export interface GrazingData {
+  kind: 'growth' | 'branches' | 'storage'
+  /** What a tended plant regrows per cycle, in the diet's unit. */
+  unitsPerCycle: number
+  /** The same for a wild plant (growth and branches only). */
+  wildUnitsPerCycle?: number
+  branches?: number
+  /** Share of full growth (or of a full store) below which critters leave it alone. */
+  minMaturity?: number
+  /** storage only: the element eaten. */
+  tag?: string
 }
 
 /** A radiation mutation a seed can carry; multipliers are the game's own (yield 0.5 means x1.5). */

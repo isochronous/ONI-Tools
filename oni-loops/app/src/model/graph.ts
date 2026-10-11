@@ -17,7 +17,9 @@ export type ProcessKind =
   | 'egg' // critter lays an egg
   | 'grow' // baby critter drops something on growing up
   | 'shear' // critter sheds an item when groomed/sheared
+  | 'milk' // critter is milked at a Milking Station
   | 'crop' // plant harvest
+  | 'graze' // critter eats the living plant: its growth, or what it holds
   | 'seed' // plant produces seeds
   | 'harvest-bonus' // extra item on a skilled harvest
   | 'transition' // element freezes/melts/boils/condenses
@@ -146,6 +148,8 @@ export function stepLabel(p: Process): string {
       return p.via + ' dies'
     case 'crop':
       return p.via + ' harvest'
+    case 'graze':
+      return p.via + ' grazed'
     case 'rot':
       return p.viaId === 'RotPile' ? p.via + ' decomposes' : p.via + ' spoils'
     case 'egg':
@@ -156,6 +160,8 @@ export function stepLabel(p: Process): string {
       return p.via + ' grows up'
     case 'shear':
       return p.via + ' sheared'
+    case 'milk':
+      return p.via + ' milked'
     case 'seed':
       return p.via + ' drops a seed'
     case 'harvest-bonus':
@@ -490,6 +496,13 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
   const ranchable = new Set(
     d.critters.filter((c) => !c.adult && (c.egg || c.diet?.length)).map((c) => c.id),
   )
+  // A diet of a living plant is priced per unit of growth, except a Bonbon Tree's, drunk by
+  // the kilogram.
+  const plantsById = new Map(d.plants.map((p) => [p.id, p]))
+  const growthUnits = (tag: string): boolean => {
+    const grazing = plantsById.get(tag)?.grazing
+    return !!grazing?.length && !grazing.some((g) => g.kind === 'storage')
+  }
   for (const c of d.critters) {
     critters.set(c.id, { name: c.name, dlc: c.dlc })
     // Babies eat and die like their adults; only the adult is listed (and ranched).
@@ -547,7 +560,7 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
           wildFactor: d.tuning.wildCritterCalorieBurnRatio,
           notes: c.caloriesBurnedPerCycle
             ? [
-                `eats ${fmt(c.caloriesBurnedPerCycle / g.caloriesPerKg)} kg/cycle when tame, ${fmt((c.caloriesBurnedPerCycle * d.tuning.wildCritterCalorieBurnRatio) / g.caloriesPerKg)} wild`,
+                `eats ${fmt(c.caloriesBurnedPerCycle / g.caloriesPerKg)} ${growthUnits(g.foods[0]!) ? 'units of growth' : 'kg'} a cycle when tame, ${fmt((c.caloriesBurnedPerCycle * d.tuning.wildCritterCalorieBurnRatio) / g.caloriesPerKg)} wild`,
               ]
             : [],
         })
@@ -664,6 +677,89 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
           : ['grows scales to shear'],
       })
     }
+    // What a fed adult eats over some cycles, for products that come from being fed: the
+    // diet with the most foods stands for its menu, as for eggs. Empty when nothing is known.
+    const fedInputs = (cycles: number, onlyFood?: string | null): Flow[] => {
+      const diets = (c.diet ?? []).filter((x) => x.caloriesPerKg > 0 && x.eats.length)
+      const diet = (onlyFood ? diets.filter((x) => x.eats.includes(onlyFood)) : diets).sort(
+        (a, b) => b.eats.length - a.eats.length,
+      )[0]
+      if (!diet || !c.caloriesBurnedPerCycle) return []
+      const eats = onlyFood ? [onlyFood] : diet.eats
+      return [
+        {
+          tag: eats[0]!,
+          amount: (c.caloriesBurnedPerCycle * cycles) / diet.caloriesPerKg,
+          anyOf: eats.length > 1 ? eats : undefined,
+        },
+      ]
+    }
+    const station = (id: string) => 'at ' + (d.names[id] ?? id)
+    const aquatic = c.id === 'Squid' || c.id === 'SeaHorse'
+    if (c.milk && !c.adult && c.milk.ratePercentPerSecond > 0) {
+      // The well-fed effect lasts as long as the critter keeps eating, so a fed adult fills up
+      // in 100 / (rate × 600) cycles and is milked for its whole capacity each time.
+      const cyclesPerMilking = 100 / (c.milk.ratePercentPerSecond * cycle)
+      add({
+        kind: 'milk',
+        via: c.name,
+        viaId: c.id,
+        inputs: fedInputs(cyclesPerMilking),
+        outputs: [{ tag: c.milk.element, amount: c.milk.capacity }],
+        dlc: c.dlc,
+        needs: {
+          critter: c.id,
+          extras: [station(aquatic ? 'UnderwaterMilkingStation' : 'MilkingStation')],
+        },
+        throughput: { runsPerCycle: 1 / cyclesPerMilking, instance: 'critter' },
+        pipedOutput: true,
+        notes: [
+          `${fmt(c.milk.capacity)} kg every ${fmt(cyclesPerMilking)} cycles when tame and fed`,
+        ],
+      })
+    }
+    if (c.fertilityMilk && !c.adult && c.cyclesPerEgg) {
+      // Milking spends part of the fertility bar, so each milking costs that fraction of an
+      // egg's wait (faster when happier, like laying) and the eggs it would have become.
+      const happiness = options.happiness?.(c.id) ?? DEFAULT_HAPPINESS
+      const cyclesPerEgg =
+        c.cyclesPerEgg / (1 + (d.tuning.fertilityPerHappiness ?? 2.25) * Math.max(0, happiness))
+      const cyclesPerMilking = cyclesPerEgg * c.fertilityMilk.fertilityConsumed
+      add({
+        kind: 'milk',
+        via: c.name,
+        viaId: c.id,
+        inputs: fedInputs(cyclesPerMilking),
+        outputs: [{ tag: c.fertilityMilk.element, amount: c.fertilityMilk.mass }],
+        dlc: c.dlc,
+        needs: {
+          critter: c.id,
+          extras: [station(aquatic ? 'UnderwaterMilkingStation' : 'MilkingStation')],
+        },
+        throughput: { runsPerCycle: 1 / cyclesPerMilking, instance: 'critter' },
+        pipedOutput: true,
+        notes: [
+          `${fmt(c.fertilityMilk.mass)} kg every ${fmt(cyclesPerMilking)} cycles at happiness ${fmt(happiness)}; each milking spends ${fmt(c.fertilityMilk.fertilityConsumed * 100)}% of an egg${c.fertilityMilk.requiresHappy ? ', only when happy' : ''}`,
+        ],
+      })
+    }
+    if (c.wellFedShear && !c.adult && c.wellFedShear.growthCycles > 0) {
+      const w = c.wellFedShear
+      const only = w.requiredDiet ?? undefined
+      add({
+        kind: 'shear',
+        via: c.name,
+        viaId: c.id,
+        inputs: fedInputs(w.growthCycles, only),
+        outputs: [{ tag: w.item, amount: w.mass }],
+        dlc: c.dlc,
+        needs: { critter: c.id, extras: only ? ['fed ' + label(only)] : undefined },
+        throughput: { runsPerCycle: 1 / w.growthCycles, instance: 'critter' },
+        notes: [
+          `${fmt(w.mass)} kg every ${fmt(w.growthCycles)} cycles when tame and fed${only ? ' ' + label(only) : ''}`,
+        ],
+      })
+    }
   }
 
   // Plants.
@@ -744,6 +840,61 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         notes: [`every ${fmt(cycles / wild)} cycles when wild-planted; needs nothing`, ...boost],
         seconds: duration / wild,
       })
+      // A critter that eats the plant itself (a Drecko at a Mealwood, a Glo Squid at a Tublia)
+      // takes its growth instead of its harvest. Diets price that per unit, one unit being a
+      // cycle of a tended plant's growth, so a plant yields its units per cycle for the same
+      // irrigation and fertilizer a cycle of growing costs; a mutant growing slower holds more
+      // maturity per unit and yields fewer. A Bonbon Tree is drunk from: kilograms it holds.
+      for (const g of p.grazing ?? []) {
+        const perCycle = g.kind === 'storage' ? g.unitsPerCycle : g.unitsPerCycle / growthScale
+        const what =
+          g.kind === 'storage'
+            ? `${fmt(perCycle)} kg of ${label(g.tag!)} a cycle`
+            : g.kind === 'branches'
+              ? `${fmt(perCycle)} units of growth a cycle across its ${g.branches} branches`
+              : `${fmt(perCycle)} units of growth a cycle`
+        const perCycleInputs: Flow[] = []
+        for (const f of p.irrigation ?? [])
+          perCycleInputs.push({
+            tag: f.tag,
+            amount: f.rate * cycle * usageScale,
+            role: 'irrigation',
+          })
+        for (const f of p.fertilizer ?? [])
+          perCycleInputs.push({
+            tag: f.tag,
+            amount: f.rate * cycle * usageScale,
+            role: 'fertilizer',
+          })
+        add({
+          kind: 'graze',
+          via: p.name + mutationName,
+          viaId: p.id,
+          inputs: perCycleInputs,
+          outputs: [{ tag: p.id, amount: perCycle }],
+          dlc: p.dlc,
+          needs: { plant: p.id, extras: extras.length ? extras : undefined },
+          throughput: { runsPerCycle: 1, instance: 'plant' },
+          notes: [`${what} when tended and eaten in place; a grazed plant is not harvested`],
+        })
+        if (g.wildUnitsPerCycle) {
+          const wildPerCycle = g.wildUnitsPerCycle / growthScale
+          add({
+            kind: 'graze',
+            via: `${p.name} (wild)` + mutationName,
+            viaId: p.id,
+            inputs: [],
+            outputs: [{ tag: p.id, amount: wildPerCycle }],
+            dlc: p.dlc,
+            needs: { plant: p.id, extras: extras.length ? extras : undefined },
+            wildFactor: wild,
+            throughput: { runsPerCycle: 1, instance: 'plant' },
+            notes: [
+              `${fmt(wildPerCycle)} units of growth a cycle when wild-planted; needs nothing`,
+            ],
+          })
+        }
+      }
       if (p.skilledHarvestBonus) {
         add({
           kind: 'harvest-bonus',

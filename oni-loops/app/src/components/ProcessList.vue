@@ -29,7 +29,9 @@ const KIND_TITLES: Record<ProcessKind, string> = {
   egg: 'Laid by critters',
   grow: 'Shed when a critter grows up',
   shear: 'Sheared from critters',
+  milk: 'Milked from critters',
   crop: 'Grown',
+  graze: 'Grazed from living plants',
   seed: 'Seeds from plants',
   'harvest-bonus': 'Bonus on skilled harvests',
   transition: 'Phase change, by heating or cooling in-world',
@@ -111,6 +113,7 @@ const INSTANCE_NOUN = {
   plant: 'plant',
   duplicant: 'Duplicant',
   geyser: 'geyser',
+  feature: 'feature',
 }
 
 /** "about 3,000 kg per cycle per building", from the process's rate per instance. */

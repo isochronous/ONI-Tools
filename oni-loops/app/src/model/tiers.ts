@@ -305,12 +305,14 @@ function describe(d: GameData, p: Process, worst: Tier): string {
       return `excreted by ${p.via} fed ${from}`
     case 'egg':
     case 'shear':
+    case 'milk':
     case 'grow':
     case 'drop':
       return `from ${p.via}`
     case 'crop':
     case 'seed':
     case 'harvest-bonus':
+    case 'graze':
       return `grown on ${p.via}`
     case 'transition':
       return `by heating or cooling ${from}${worst === 'renewable' ? '' : ` (${TIER_LABEL[worst]})`}`
