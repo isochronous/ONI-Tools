@@ -180,11 +180,12 @@ interface ShapeInput {
 /**
  * True when `output` is a minor share of what the process puts out by mass (the Polymer
  * Press's wisp of steam, the Water Sieve's polluted dirt): the step is run for something
- * else, and this is what comes off the side.
+ * else, and this is what comes off the side. Not for a phase change: boiling Salt Water for
+ * its 7% of Salt, or Squid Ink for its 10% of Refined Carbon, is the whole point of the boil.
  */
 const MINOR_SHARE = 0.25
 function minorOutput(graph: Graph, p: Process, output: string): boolean {
-  if (p.primaryOutput === output) return false
+  if (p.primaryOutput === output || p.kind === 'transition') return false
   const mass = p.outputs.filter((f) => graph.elements.has(f.tag))
   if (!graph.elements.has(output) || mass.length < 2) return false
   const total = mass.reduce((sum, f) => sum + f.amount, 0)
