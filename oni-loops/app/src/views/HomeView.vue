@@ -51,16 +51,25 @@ const perCycle = computed({
   },
 })
 
-// What the colony has, and how much it wants, decide the answer; the filters only hide parts of it.
+// What the colony has, how much it wants, and what the player has hidden decide the answer;
+// the filters then hide locked sources and anything a hidden key still reaches.
 const tiers = computed(() =>
   computeTiers(gameData, graph.value, store.colony, store.clusterData, store.geysers),
 )
 const result = computed(() =>
   target.value
-    ? answer(graph.value, target.value, store.colony, tiers.value, perCycle.value)
+    ? answer(
+        graph.value,
+        target.value,
+        { ...store.colony, excluded: store.hidden },
+        tiers.value,
+        perCycle.value,
+      )
     : null,
 )
-const facets = computed(() => (result.value ? facetsOf(graph.value, result.value) : []))
+const facets = computed(() =>
+  result.value ? facetsOf(graph.value, result.value, store.hidden) : [],
+)
 
 const shownChains = computed(() =>
   result.value

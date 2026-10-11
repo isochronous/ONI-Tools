@@ -4,8 +4,9 @@ import { nodesOf, type Answer, type Chain } from './chains'
 
 /**
  * Filters hide answers that depend on something the player does not have or does not want
- * to use. They never change what is computed, only what is shown, so the search and the
- * ordering stay the same while the player narrows the list.
+ * to use. The hidden keys also go into the search as `Colony.excluded`, so hiding the best
+ * way to make something (Kilns, Hatches) lets the search find the next ways rather than
+ * only taking rows off the list; the row filter still applies to whatever comes back.
  */
 export type FacetGroup = 'machine' | 'critter' | 'plant' | 'food' | 'material'
 
@@ -75,14 +76,18 @@ export function chainKeys(graph: Graph, chain: Chain): string[] {
   return [...keys]
 }
 
-/** Everything the current answer depends on, grouped and counted, for the filter bar. */
-export function facetsOf(graph: Graph, answer: Answer): Facet[] {
+/**
+ * Everything the current answer depends on, grouped and counted, for the filter bar. Hidden
+ * keys stay listed (with no uses, since the search left them out) so they can be turned back on.
+ */
+export function facetsOf(graph: Graph, answer: Answer, hidden?: Set<string>): Facet[] {
   const uses = new Map<string, number>()
   const count = (keys: string[]) => {
     for (const k of keys) uses.set(k, (uses.get(k) ?? 0) + 1)
   }
   for (const c of answer.chains) count(chainKeys(graph, c))
   for (const { process } of answer.locked) count(processKeys(graph, process, answer.target))
+  for (const k of hidden ?? []) if (!uses.has(k)) uses.set(k, 0)
   const facets: Facet[] = []
   for (const [k, n] of uses) {
     const i = k.indexOf(':')

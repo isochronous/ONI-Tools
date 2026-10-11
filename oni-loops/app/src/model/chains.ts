@@ -15,6 +15,12 @@ export interface Colony {
   features: Map<string, number>
   /** How many Duplicants the colony has: the one thing a chain cannot build more of. */
   duplicants: number
+  /**
+   * Filter-bar keys ("machine:Kiln", "critter:Hatch", "material:Coal") the player has hidden.
+   * The search leaves those out entirely, so hiding the best route lets the next ones through
+   * instead of only taking rows off the list.
+   */
+  excluded?: Set<string>
 }
 
 export const DEFAULT_DUPLICANTS = 8
@@ -113,6 +119,20 @@ export function isAvailable(p: Process, colony: Colony): string | null {
   if (p.needs.critter && colony.critters && !colony.critters.has(p.needs.critter))
     return 'needs ' + p.via
   return null
+}
+
+function excludedTag(tag: string, excluded: Set<string>): boolean {
+  return excluded.has('material:' + tag) || excluded.has('food:' + tag)
+}
+
+/** True when the player has hidden what runs the process, or one of its fixed inputs. */
+export function isExcluded(p: Process, colony: Colony): boolean {
+  const ex = colony.excluded
+  if (!ex || ex.size === 0) return false
+  if (p.needs.building && ex.has('machine:' + p.needs.building)) return true
+  if (p.needs.critter && ex.has('critter:' + p.needs.critter)) return true
+  if (p.needs.plant && ex.has('plant:' + p.needs.plant)) return true
+  return p.inputs.some((f) => !f.anyOf && excludedTag(f.tag, ex))
 }
 
 let dlcNames: Record<string, string> = {}
@@ -352,9 +372,11 @@ export function findChains(
   /** Every distinct way to make `tag`, one shape per set of inputs, best first. */
   function ways(tag: string, depth: number, need: number): Shape[] {
     if (depth > MAX_DEPTH) return []
+    // A hidden material is not to be made along the way, only the target itself.
+    if (depth > 0 && colony.excluded && excludedTag(tag, colony.excluded)) return []
     const groups = new Map<string, Shape>()
     for (const p of graph.byOutput.get(tag) ?? []) {
-      if (isAvailable(p, colony)) continue
+      if (isAvailable(p, colony) || isExcluded(p, colony)) continue
       const shape = expand(p, tag, depth, need)
       if (!shape) continue
       // Ways that take the same inputs in the same proportions are one way with alternatives
@@ -487,10 +509,11 @@ export function findChains(
     ) => {
       if (found.length >= MAX_LOOPS) return
       for (const p of graph.byInput.get(current) ?? []) {
-        if (isAvailable(p, colony)) continue
+        if (isAvailable(p, colony) || isExcluded(p, colony)) continue
         if (p.kind === 'worldgen' || p.kind === 'geyser' || p.kind === 'starmap') continue
         for (const o of p.outputs) {
           if (o.amount <= 0) continue
+          if (colony.excluded && excludedTag(o.tag, colony.excluded)) continue
           const step = { p, from: current, to: o.tag }
           if (o.tag === target) {
             // Only loops of exactly the current length, so shorter ones come first.
