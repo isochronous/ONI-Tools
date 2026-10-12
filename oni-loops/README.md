@@ -9,6 +9,7 @@ Live: https://isochronous.github.io/oni-loops/
 ## Layout
 
 - `app/`: the site (Vue 3, TypeScript, Vite). `npm install && npm run dev` to work on it.
+  The look is the game's own: its UI face, Liberation Sans (the game's "Liberation Sans SDF"; subset to Latin in `app/src/assets/fonts/`, SIL Open Font License alongside), the dark HUD bar, and the cream windows with blue-grey title strips of the Vitals and Consumables screens; the dark theme (switch in the top bar, remembered in the browser) is its tooltips, warm charcoal with the same accents turned down.
 - `tools/OniDataDump/`: a local-only game mod that writes `oni-data-dump.json` (every material conversion the game defines, with DLC restrictions) when the main menu opens. Built like the other isochronous mods via the `common/` submodule.
 - `data/`: the dumped JSON the app ships with, one file per game build and DLC set (`<build>-all-dlcs.json` with Spaced Out!, `<build>-no-spaced-out.json` without; the content packs only add things and are filtered in the app). Import a fresh dump with `python tools/import-dump.py`. Note that the game enables mods per DLC mode, so the dump mod has to be enabled once in the Mods menu after switching Spaced Out! on or off.
 

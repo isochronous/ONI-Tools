@@ -5,6 +5,7 @@ import ChainCard from '../components/ChainCard.vue'
 import ColonyPanel from '../components/ColonyPanel.vue'
 import FilterBar from '../components/FilterBar.vue'
 import ProcessList from '../components/ProcessList.vue'
+import TagIcon from '../components/TagIcon.vue'
 import TargetPicker from '../components/TargetPicker.vue'
 import { gameData, label } from '../data/load'
 import { answer, nodesOf, type Chain } from '../model/chains'
@@ -123,9 +124,12 @@ function plural(n: number, word: string): string {
 
       <template v-if="result">
         <header class="target">
-          <h1>{{ label(result.target) }}</h1>
+          <h1><TagIcon :tag="result.target" />{{ label(result.target) }}</h1>
           <p class="tier-line">
-            <strong>{{ TIER_LABEL[tiers.of(result.target)] }}</strong> for your colony:
+            <strong :class="'t-' + tiers.of(result.target)">{{
+              TIER_LABEL[tiers.of(result.target)]
+            }}</strong>
+            for your colony:
             {{ tiers.reason(result.target) }}.
           </p>
         </header>
@@ -181,7 +185,7 @@ function plural(n: number, word: string): string {
             />
           </div>
           <p v-if="more" class="more">
-            <button type="button" class="more-button" @click="shown += PAGE">
+            <button type="button" class="btn" @click="shown += PAGE">
               Show {{ Math.min(PAGE, more) }} more
             </button>
             <button type="button" class="link" @click="shown = shownChains.length">
@@ -235,12 +239,13 @@ function plural(n: number, word: string): string {
 }
 .main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
   max-width: 1100px;
 }
 @media (max-width: 960px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .colony {
     position: static;
@@ -249,31 +254,65 @@ function plural(n: number, word: string): string {
   }
 }
 
+/* The chosen material, named the way the game's details panel names a building: icon, bold capitals. */
 .target h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   margin: 0;
   font-size: 2.25rem;
-  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.target h1 :deep(.icon) {
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: 0;
+  vertical-align: middle;
 }
 .tier-line {
-  margin-top: 0.25rem;
+  margin-top: 0.35rem;
   color: var(--muted);
   max-width: var(--measure);
 }
 .tier-line strong {
+  display: inline-block;
+  margin-right: 0.2rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: var(--radius);
+  background: var(--raised);
   color: var(--text);
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 0.1em;
+}
+.tier-line strong.t-renewable {
+  background: var(--good-dim);
+  color: var(--good);
+}
+.tier-line strong.t-space,
+.tier-line strong.t-none {
+  background: var(--warn-dim);
+  color: var(--warn);
 }
 
+/* A section heading: the game's uppercase label over a rule. */
 .block-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem 1.5rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--line);
 }
 .block h2 {
   margin: 0;
-  font-size: 1.375rem;
+  font-size: 0.9375rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 .demand {
   display: inline-flex;
@@ -284,14 +323,10 @@ function plural(n: number, word: string): string {
 }
 .demand input {
   width: 5.5rem;
-  padding: 0.3rem 0.5rem;
-  background: var(--raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  color: var(--text);
+  padding: 0.25rem 0.5rem;
 }
 .meta {
-  margin: 0.4rem 0 0.9rem;
+  margin: 0.6rem 0 0.9rem;
   color: var(--muted);
   max-width: var(--measure);
 }
@@ -305,16 +340,6 @@ function plural(n: number, word: string): string {
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
   align-items: center;
-}
-.more-button {
-  padding: 0.45rem 1rem;
-  background: var(--raised);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  cursor: pointer;
-}
-.more-button:hover {
-  border-color: var(--accent);
 }
 .intro {
   display: grid;

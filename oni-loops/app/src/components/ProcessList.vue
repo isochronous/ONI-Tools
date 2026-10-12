@@ -186,7 +186,9 @@ function notes(p: Process): string[] {
 }
 h3 {
   margin: 0 0 0.25rem;
-  font-size: 0.9375rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 ul {
@@ -199,10 +201,10 @@ ul {
   grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);
   gap: 0.15rem 1.25rem;
   padding: 0.5rem 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--line);
 }
 .via {
-  font-weight: 600;
+  font-weight: 700;
 }
 .flow {
   display: flex;
@@ -211,7 +213,7 @@ ul {
   gap: 0.2rem 0.45rem;
 }
 .gives {
-  font-weight: 600;
+  font-weight: 700;
 }
 .arrow,
 .plus,
@@ -219,7 +221,7 @@ ul {
   color: var(--muted);
 }
 .arrow {
-  color: var(--accent);
+  color: var(--blue);
 }
 .notes {
   grid-column: 2;
@@ -230,7 +232,7 @@ ul {
   color: var(--muted);
 }
 .t-off-world {
-  text-decoration: underline dotted var(--border-strong);
+  text-decoration: underline dotted var(--line-strong);
 }
 .t-space,
 .t-none {

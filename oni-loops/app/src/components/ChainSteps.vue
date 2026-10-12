@@ -443,16 +443,16 @@ function doer(n: Node): string | undefined {
   --arrow: var(--good);
 }
 .hue-1 {
-  --arrow: var(--accent);
+  --arrow: var(--blue);
 }
 .hue-2 {
   --arrow: var(--warn);
 }
 .hue-3 {
-  --arrow: #c89bff;
+  --arrow: var(--hue-3);
 }
 .hue-4 {
-  --arrow: #ff8fa3;
+  --arrow: var(--hue-4);
 }
 .run {
   list-style: none;
@@ -529,7 +529,7 @@ function doer(n: Node): string | undefined {
 .result {
   margin-top: 0.4rem;
   padding: 0.6rem 0 0 1.4rem;
-  border-top: 2px solid var(--border-strong);
+  border-top: 2px solid var(--line-strong);
   max-width: var(--measure);
 }
 .result .amount {
@@ -538,7 +538,7 @@ function doer(n: Node): string | undefined {
 }
 
 .how {
-  color: var(--accent);
+  color: var(--blue);
 }
 .how.source {
   color: var(--good);
@@ -553,7 +553,7 @@ function doer(n: Node): string | undefined {
   color: var(--good);
 }
 .extra.t-off-world {
-  text-decoration: underline dotted var(--border-strong);
+  text-decoration: underline dotted var(--line-strong);
 }
 .extra.t-space,
 .extra.t-none {
@@ -563,6 +563,6 @@ function doer(n: Node): string | undefined {
 /* Another way to do the same step, on its own line and in the same colour as the step itself. */
 .alt {
   display: block;
-  color: var(--accent);
+  color: var(--blue);
 }
 </style>

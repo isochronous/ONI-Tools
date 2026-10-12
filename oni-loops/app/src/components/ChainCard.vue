@@ -103,7 +103,7 @@ const costText = computed(() => {
 </script>
 
 <template>
-  <article class="chain-card" :class="'tier-' + chain.worstTier">
+  <article class="chain-card panel" :class="'tier-' + chain.worstTier">
     <header class="head">
       <p class="headline">
         <span class="tier-word">{{ HEADLINE[chain.worstTier] }}</span>
@@ -157,39 +157,50 @@ const costText = computed(() => {
 </template>
 
 <style scoped>
+/* A card with the game's notification-tile edge: its colour says what the loop costs. */
 .chain-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: 1rem 1.25rem 1.1rem;
+  border-left: 3px solid var(--line-strong);
 }
 .chain-card.tier-renewable {
-  border-color: rgba(138, 209, 127, 0.35);
+  border-left-color: var(--good);
+}
+.chain-card.tier-space,
+.chain-card.tier-none {
+  border-left-color: var(--warn);
 }
 
 .head {
   display: grid;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  background: var(--band);
+  border-radius: 0 var(--radius) 0 0;
 }
 .headline {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
+  align-items: baseline;
   gap: 0.75rem;
   max-width: var(--measure);
 }
 .tier-word {
-  font-size: 1.25rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 0.75rem;
   font-weight: 700;
-  line-height: 1.1;
-  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 .tier-renewable .tier-word {
+  background: var(--good-dim);
   color: var(--good);
 }
 .tier-space .tier-word,
 .tier-none .tier-word {
+  background: var(--warn-dim);
   color: var(--warn);
 }
 .headline-text {
@@ -202,22 +213,29 @@ const costText = computed(() => {
   max-width: var(--measure);
 }
 .capped strong {
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.chain-card > .steps {
+  padding: 0.9rem 1rem 0;
 }
 
 .foot {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
+  margin: 0.9rem 1rem 0;
+  padding: 0.6rem 0 0.9rem;
+  border-top: 1px solid var(--line);
   font-size: 0.875rem;
   color: var(--muted);
   max-width: var(--measure);
+}
+.chain-card > .steps:last-child {
+  padding-bottom: 1rem;
 }
 .extra {
   color: var(--text);
 }
 .extra.t-off-world {
-  text-decoration: underline dotted var(--border-strong);
+  text-decoration: underline dotted var(--line-strong);
 }
 .extra.t-space,
 .extra.t-none {

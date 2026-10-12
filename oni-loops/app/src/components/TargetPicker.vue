@@ -55,26 +55,36 @@ function choose(t: Target) {
 .picker {
   position: relative;
 }
+/* The game's search box: a dark inset with the prompt as a label, lit yellow while typing. */
 .field {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0 0 0 1rem;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  transition: border-color 120ms;
+  background: var(--inset);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 0 var(--edge);
+  transition:
+    border-color 120ms,
+    box-shadow 120ms;
 }
 .field:focus-within {
   border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 2px 0 var(--edge);
 }
 .field.open {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
 .prompt {
-  font-size: 1.125rem;
-  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
   white-space: nowrap;
 }
 input {
@@ -85,8 +95,11 @@ input {
   background: transparent;
   border: none;
 }
-input:focus {
+input:focus,
+input:focus-visible {
   outline: none;
+  box-shadow: none;
+  border: none;
 }
 input::placeholder {
   color: var(--faint);
@@ -96,27 +109,32 @@ input::placeholder {
   z-index: 10;
   left: 0;
   right: 0;
-  margin: -1px 0 0;
+  margin: 0;
   padding: 0.3rem;
   list-style: none;
   background: var(--panel);
   border: 1px solid var(--accent);
-  border-top-color: var(--border);
-  border-radius: 0 0 var(--radius-card) var(--radius-card);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 .matches li {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius);
   cursor: pointer;
 }
 .matches li:hover {
   background: var(--raised);
+  color: var(--accent);
 }
 .kind {
-  color: var(--muted);
-  font-size: 0.875rem;
+  color: var(--faint);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 </style>

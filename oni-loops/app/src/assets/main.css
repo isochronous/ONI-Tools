@@ -1,28 +1,115 @@
 /*
- * Colours borrow from the game's own screens: slate panels over the dark of space, the
- * oxygen overlay's teal for anything that does work, the heat overlay's amber for anything
- * that should give the player pause, and a soft green for a loop that pays back.
+ * The look comes from the game's own screens rather than from the web: the dark bar across
+ * the top of the HUD, and under it the game's windows (Vitals, Consumables, the Codex): cream
+ * paper panels with dark text under a blue-grey title strip, on a stone-grey ground. Its UI
+ * face (Liberation Sans, the game's "Liberation Sans SDF") for everything, its orange for
+ * whatever is selected or under the pointer, blue for machines doing work, red for what should
+ * give the player pause, and green for a loop that pays back.
  */
+@font-face {
+  font-family: 'Liberation Sans';
+  src: url(./fonts/LiberationSans-Regular.woff2) format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Liberation Sans';
+  src: url(./fonts/LiberationSans-Bold.woff2) format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Liberation Sans';
+  src: url(./fonts/LiberationSans-Italic.woff2) format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Liberation Sans';
+  src: url(./fonts/LiberationSans-BoldItalic.woff2) format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
-  --bg: #141a21;
-  --panel: #1c242d;
-  --raised: #243040;
-  --border: #2f3a47;
-  --border-strong: #3f4d5e;
-  --text: #e9edf1;
-  --muted: #94a1b0;
-  --faint: #6b7784;
-  --accent: #5fc8c0;
-  --accent-ink: #0f1a1a;
-  --good: #8ad17f;
-  --good-dim: rgba(138, 209, 127, 0.14);
-  --warn: #e9a23b;
-  --warn-dim: rgba(233, 162, 59, 0.14);
-  --rail: #3f4d5e;
-  --focus: #9fe3dd;
-  --radius-control: 6px;
-  --radius-card: 12px;
+  --bg: #d8d4c8;
+  --hatch: rgba(0, 0, 0, 0.035);
+  --bar: #1c242c;
+  --bar-ink: #f4f3ee;
+  --bar-muted: #aab3bb;
+  --panel: #f4f1e8;
+  --band: #e8e4d8;
+  --strip: #3a4754;
+  --strip-ink: #ffffff;
+  --strip-muted: #d6dde3;
+  --raised: #e2ded1;
+  --raised-hover: #d6d1c1;
+  --inset: #ffffff;
+  --edge: #a9a394;
+  --line: #d4cfc1;
+  --line-strong: #b4ae9e;
+  --text: #22282e;
+  --muted: #5d666f;
+  --faint: #8a929a;
+  --accent: #d9821a;
+  --accent-ink: #ffffff;
+  --accent-dim: rgba(217, 130, 26, 0.16);
+  --blue: #1f66ad;
+  --good: #3b8a2e;
+  --good-dim: rgba(59, 138, 46, 0.14);
+  --warn: #bf3f24;
+  --warn-dim: rgba(191, 63, 36, 0.16);
+  --rail: #b4ae9e;
+  --hue-3: #7a4fc9;
+  --hue-4: #c93a66;
+  --focus: #d9821a;
+  --radius: 3px;
   --measure: 72ch;
+  --font: 'Liberation Sans', Arial, 'Helvetica Neue', Helvetica, sans-serif;
+  color-scheme: light;
+}
+
+/*
+ * Dark: the game's tooltips and pause menu rather than its windows: warm charcoal, near-black
+ * strips, off-white text, and the same accents turned down: ochre, dusty steel blue, sage,
+ * terracotta. index.html and theme.ts set data-theme; "auto" resolves to one of the two.
+ */
+:root[data-theme='dark'] {
+  --bg: #1e1c19;
+  --hatch: rgba(255, 255, 255, 0.025);
+  --bar: #0f0e0c;
+  --bar-ink: #ece7dc;
+  --bar-muted: #9c968a;
+  --panel: #2a2825;
+  --band: #33302c;
+  --strip: #141311;
+  --strip-ink: #ece7dc;
+  --strip-muted: #a8a194;
+  --raised: #3a3732;
+  --raised-hover: #47433c;
+  --inset: #171613;
+  --edge: #0b0a09;
+  --line: #3d3a35;
+  --line-strong: #55514a;
+  --text: #ece7dc;
+  --muted: #a8a194;
+  --faint: #7d776c;
+  --accent: #d4953a;
+  --accent-ink: #1a1403;
+  --accent-dim: rgba(212, 149, 58, 0.18);
+  --blue: #8fb3cf;
+  --good: #9bbf7a;
+  --good-dim: rgba(155, 191, 122, 0.16);
+  --warn: #d9775a;
+  --warn-dim: rgba(217, 119, 90, 0.18);
+  --rail: #55514a;
+  --hue-3: #b095d8;
+  --hue-4: #d08a9c;
+  --focus: #d4953a;
   color-scheme: dark;
 }
 
@@ -35,30 +122,25 @@
 html,
 body {
   margin: 0;
-  background: var(--bg);
+  background-color: var(--bg);
+  /* The faint diagonal hatch the game draws behind its screens. */
+  background-image: repeating-linear-gradient(-45deg, var(--hatch) 0 1px, transparent 1px 9px);
   color: var(--text);
-  font-family: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
-  font-size: 16px;
+  font-family: var(--font);
+  font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-#app {
-  max-width: 1560px;
-  margin: 0 auto;
-  padding: 1.25rem 1.25rem 3rem;
-}
-
 a {
-  color: var(--accent);
+  color: var(--blue);
 }
 
 h1,
 h2,
 h3 {
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -0.01em;
 }
 
 p {
@@ -82,11 +164,44 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
-/* Small heading over a group of controls or rows: sentence case, quiet, no tracking. */
+/* ---- panels: a flat box with a darker title strip, like the game's windows ---- */
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 0 var(--edge);
+}
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding: 0.55rem 1rem;
+  background: var(--strip);
+  border-radius: var(--radius) var(--radius) 0 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--strip-ink);
+}
+/* Plain words beside a strip's title: what is chosen, how many are hidden. */
+.strip .note {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--strip-muted);
+}
+
+/* Small heading over a group of controls or rows: the game's uppercase labels. */
 .eyebrow {
   margin: 0 0 0.4rem;
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -101,7 +216,7 @@ select {
   background: none;
   border: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--blue);
   cursor: pointer;
   text-decoration: underline;
   text-decoration-color: transparent;
@@ -111,15 +226,71 @@ select {
   text-decoration-color: currentColor;
 }
 
-/* Rounded tag for an amount of something, tinted by how hard it is to get. */
+/* The game's button: a flat block with a dark bottom edge and an uppercase label. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  background: var(--raised);
+  border: 0;
+  border-bottom: 2px solid var(--edge);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+.btn:hover {
+  background: var(--raised-hover);
+  color: var(--accent);
+}
+.btn:active {
+  transform: translateY(1px);
+  border-bottom-width: 1px;
+}
+
+/* Fields: a dark inset, lit yellow while it has the focus. */
+input[type='number'],
+input[type='search'],
+input[type='text'],
+select {
+  padding: 0.35rem 0.5rem;
+  background: var(--inset);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+input[type='number']:focus-visible,
+input[type='search']:focus-visible,
+input[type='text']:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* Square tag for an amount of something, its left edge tinted by how hard it is to get. */
 .chip {
   display: inline-flex;
   align-items: baseline;
   gap: 0.35rem;
-  padding: 0.1rem 0.6rem;
-  border-radius: 999px;
+  padding: 0.1rem 0.5rem 0.1rem 0.45rem;
+  border-radius: var(--radius);
+  border-left: 3px solid var(--line-strong);
   background: var(--raised);
-  border: 1px solid transparent;
   color: var(--text);
   font-size: 0.875rem;
   white-space: nowrap;
@@ -130,18 +301,14 @@ select {
 }
 .chip.plus {
   background: var(--good-dim);
+  border-left-color: var(--good);
 }
 .chip.t-off-world {
-  border-color: var(--border-strong);
+  border-left-color: var(--muted);
 }
 .chip.t-space,
 .chip.t-none {
-  border-color: var(--warn);
-}
-
-input[type='range'] {
-  width: 100%;
-  accent-color: var(--accent);
+  border-left-color: var(--warn);
 }
 
 @media (prefers-reduced-motion: reduce) {

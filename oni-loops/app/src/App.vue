@@ -1,47 +1,151 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import { dataSet, gameData } from './data/load'
+import { theme, type ThemeChoice } from './theme'
+
+const THEMES: { id: ThemeChoice; name: string; title: string }[] = [
+  { id: 'light', name: 'Light', title: "The game's windows: paper panels" },
+  { id: 'dark', name: 'Dark', title: "The game's tooltips: charcoal panels" },
+  { id: 'auto', name: 'Auto', title: 'Follow the system setting' },
+]
 
 const build = gameData.game.build.split('-').slice(0, 2).join('-')
 </script>
 
 <template>
-  <header class="top">
-    <h1><RouterLink to="/">ONI Loops</RouterLink></h1>
-    <p class="sub">Game data {{ build }}, {{ dataSet.name }}</p>
+  <header class="bar">
+    <div class="bar-in">
+      <h1>
+        <RouterLink to="/">
+          <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4a8 8 0 1 1-7.4 5" />
+            <path d="M3.2 4.2v5.2h5.2" />
+          </svg>
+          ONI Loops
+        </RouterLink>
+      </h1>
+      <p class="sub">
+        Game data <span class="num">{{ build }}</span>
+        <span class="sep" aria-hidden="true"></span>
+        {{ dataSet.name }}
+      </p>
+      <div class="themes" role="group" aria-label="Theme">
+        <button
+          v-for="t in THEMES"
+          :key="t.id"
+          type="button"
+          class="theme"
+          :class="{ on: theme === t.id }"
+          :aria-pressed="theme === t.id"
+          :title="t.title"
+          @click="theme = t.id"
+        >
+          {{ t.name }}
+        </button>
+      </div>
+    </div>
   </header>
-  <RouterView />
-  <footer class="bottom">
-    <p>
-      Read from the running game by the
-      <a href="https://github.com/isochronous/oni-loops">oni-loops</a> dump tool. Not affiliated
-      with Klei.
-    </p>
-  </footer>
+  <div class="page">
+    <RouterView />
+    <footer class="bottom">
+      <p>
+        Read from the running game by the
+        <a href="https://github.com/isochronous/oni-loops">oni-loops</a> dump tool. Not affiliated
+        with Klei.
+      </p>
+    </footer>
+  </div>
 </template>
 
 <style scoped>
-.top {
+/* The game's top bar: full width, near black, a thin lighter edge below. */
+.bar {
+  background: var(--bar);
+  border-bottom: 3px solid var(--accent);
+}
+.bar-in {
   display: flex;
-  align-items: baseline;
-  gap: 1rem;
   flex-wrap: wrap;
-  margin-bottom: 1.5rem;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 0.6rem 1.25rem;
 }
 h1 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 h1 a {
-  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--bar-ink);
   text-decoration: none;
 }
+h1 a:hover {
+  color: var(--accent);
+}
+.mark {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .sub {
-  color: var(--muted);
-  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--bar-muted);
+  font-size: 0.8125rem;
+}
+.sep {
+  width: 1px;
+  height: 0.9em;
+  background: var(--bar-muted);
+}
+/* Light / Dark / Auto: a row of the game's small flat buttons, the chosen one lit. */
+.themes {
+  display: inline-flex;
+  margin-left: auto;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.theme {
+  padding: 0.25rem 0.6rem;
+  background: #2a2a2a;
+  border: 0;
+  color: var(--bar-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.theme + .theme {
+  border-left: 1px solid var(--bar);
+}
+.theme:hover {
+  color: var(--bar-ink);
+}
+.theme.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.page {
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 3rem;
 }
 .bottom {
   margin-top: 3rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
   color: var(--faint);
   font-size: 0.8125rem;
 }
