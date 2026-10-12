@@ -186,7 +186,7 @@ export function computeTiers(
   graph: Graph,
   colony: Colony,
   cluster: ClusterData | null,
-  geysers: Set<string>,
+  geysers: ReadonlyMap<string, number>,
 ): Tiers {
   const tier = new Map<string, Tier>()
   const reason = new Map<string, string>()
@@ -199,9 +199,9 @@ export function computeTiers(
   }
 
   const geyserTypes = new Map(d.geysers.map((g) => [g.id, g]))
-  for (const id of geysers) {
+  for (const [id, count] of geysers) {
     const g = geyserTypes.get(id)
-    if (g) set(g.element, 'renewable', 'from a ' + geyserName(d, g.id))
+    if (g && count > 0) set(g.element, 'renewable', 'from a ' + geyserName(d, g.id))
   }
   const start = startWorld(d, cluster)
   for (const el of start?.elements ?? []) set(el, 'local', `in ${start!.name}'s terrain`)

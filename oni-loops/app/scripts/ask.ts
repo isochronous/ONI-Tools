@@ -23,7 +23,7 @@ const colony: Colony = {
   ),
   critters: null,
   cluster: clusterId,
-  geysers: new Set(guaranteed.keys()),
+  geysers: new Map([...guaranteed].map(([id, g]) => [id, g.min])),
   features: new Map([...guaranteedFeatures(gameData, cluster)].map(([id, f]) => [id, f.min])),
   duplicants: 8,
   excluded: hidden,

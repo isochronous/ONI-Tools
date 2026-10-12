@@ -5,7 +5,7 @@ import { DEFAULT_DUPLICANTS, type Colony } from '../model/chains'
 import { guaranteedFeatures, guaranteedGeysers } from '../model/tiers'
 
 const STORAGE_KEY = 'oni-loops.colony'
-const SAVED_VERSION = 4
+const SAVED_VERSION = 5
 
 interface Saved {
   /** Bumped when a default changes so stale saved values are dropped. */
@@ -13,8 +13,10 @@ interface Saved {
   dlcs: string[]
   critters: string[] | null
   cluster: string | null
-  /** Geyser types found on the map beyond the guaranteed ones. */
-  extraGeysers: string[]
+  /** Geysers found, by type id, with how many, where the player entered a count. */
+  geysers: Record<string, number>
+  /** Before v5: geyser types found beyond the guaranteed ones, one each. */
+  extraGeysers?: string[]
   /** Terrain features found (Oil Reservoirs), by prefab id, where the player changed the guaranteed count. */
   features: Record<string, number>
   duplicants: number
@@ -59,7 +61,9 @@ export const useColonyStore = defineStore('colony', () => {
   /** null = assume any critter is available. */
   const critters = ref<Set<string> | null>(saved?.critters ? new Set(saved.critters) : null)
   const cluster = ref<string | null>(saved?.cluster ?? null)
-  const extraGeysers = ref(new Set(saved?.extraGeysers ?? []))
+  const geyserCounts = ref<Record<string, number>>(
+    saved?.geysers ?? Object.fromEntries((saved?.extraGeysers ?? []).map((id) => [id, 1])),
+  )
   const featureCounts = ref<Record<string, number>>({ ...(saved?.features ?? {}) })
   const duplicants = ref(saved?.duplicants ?? DEFAULT_DUPLICANTS)
   const demandKg = ref(saved?.demandKg ?? 100)
@@ -71,7 +75,14 @@ export const useColonyStore = defineStore('colony', () => {
   const clusterData = computed(() => gameData.clusters.find((c) => c.id === cluster.value) ?? null)
   /** Guaranteed by the cluster's worldgen rules, keyed by geyser type. */
   const guaranteed = computed(() => guaranteedGeysers(gameData, clusterData.value))
-  const geysers = computed(() => new Set([...guaranteed.value.keys(), ...extraGeysers.value]))
+  /** How many of each type the colony has found: what the player entered, else the guaranteed count. */
+  const geysers = computed(() => {
+    const out = new Map<string, number>()
+    for (const [id, g] of guaranteed.value) out.set(id, geyserCounts.value[id] ?? g.min)
+    for (const [id, n] of Object.entries(geyserCounts.value))
+      if (n > 0 && !out.has(id)) out.set(id, n)
+    return out
+  })
   /** Terrain features the cluster's worlds place, with the guaranteed count. */
   const guaranteedFeatureCounts = computed(() => guaranteedFeatures(gameData, clusterData.value))
   /** How many of each the colony has found: what the player entered, else the guaranteed count. */
@@ -98,7 +109,7 @@ export const useColonyStore = defineStore('colony', () => {
         dlcs: [...dlcs.value],
         critters: critters.value ? [...critters.value] : null,
         cluster: cluster.value,
-        extraGeysers: [...extraGeysers.value],
+        geysers: geyserCounts.value,
         features: featureCounts.value,
         duplicants: duplicants.value,
         demandKg: demandKg.value,
@@ -125,8 +136,9 @@ export const useColonyStore = defineStore('colony', () => {
     }
   }
 
-  function toggleGeyser(id: string) {
-    extraGeysers.value = toggled(extraGeysers.value, id)
+  function setGeyser(id: string, count: number) {
+    const n = Math.max(0, Math.min(99, Math.round(Number(count) || 0)))
+    geyserCounts.value = { ...geyserCounts.value, [id]: n }
   }
 
   function setFeature(id: string, count: number) {
@@ -184,7 +196,6 @@ export const useColonyStore = defineStore('colony', () => {
     cluster,
     clusterData,
     guaranteed,
-    extraGeysers,
     geysers,
     guaranteedFeatureCounts,
     features,
@@ -195,7 +206,7 @@ export const useColonyStore = defineStore('colony', () => {
     toggleDlc,
     setCritter,
     assumeAllCritters,
-    toggleGeyser,
+    setGeyser,
     setFeature,
     toggleHidden,
     setHappiness,

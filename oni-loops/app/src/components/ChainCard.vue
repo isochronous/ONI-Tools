@@ -36,6 +36,16 @@ function instanceNoun(p: Process): string {
   return t.instance === 'feature' ? label(p.needs.feature!) + 's' : INSTANCE_NOUN[t.instance]!
 }
 
+/** Why the count is a strain: more than the colony has found, or more than a colony would build. */
+function strainText(p: Process): string {
+  const t = p.throughput!
+  if (t.instance === 'feature')
+    return `more than the ${store.features.get(p.needs.feature!) ?? 0} your colony has found.`
+  if (t.instance === 'geyser')
+    return `more than the ${store.geysers.get(p.viaId) ?? 0} your colony has found.`
+  return 'more than a colony would build for this.'
+}
+
 /** Joins names the way a sentence would: "a", "a and b", "a, b, and c". */
 function list(parts: string[]): string {
   if (parts.length <= 1) return parts[0] ?? ''
@@ -56,7 +66,7 @@ const costText = computed(() => {
     .map((n) =>
       n.process.needs.feature && !((store.features.get(n.process.needs.feature) ?? 0) > 0)
         ? label(n.process.needs.feature)
-        : n.process.kind === 'geyser' && !store.geysers.has(n.process.viaId)
+        : n.process.kind === 'geyser' && !((store.geysers.get(n.process.viaId) ?? 0) > 0)
           ? [n.process.via, ...(n.alternatives ?? []).map((p) => p.via)].join(' or ')
           : '',
     )
@@ -104,11 +114,7 @@ const costText = computed(() => {
       <p v-if="chain.strain > 1" class="capped">
         At this rate the {{ stepLabel(chain.strainNode!.process) }} step needs
         {{ fmt(Math.ceil(chain.strainCount!)) }} {{ instanceNoun(chain.strainNode!.process) }},
-        {{
-          chain.strainNode!.process.throughput!.instance === 'feature'
-            ? 'more than your colony has found.'
-            : 'more than a colony would build for this.'
-        }}
+        {{ strainText(chain.strainNode!.process) }}
       </p>
       <p v-if="chain.ceiling !== undefined && chain.ceiling < perCycle - 1e-9" class="capped">
         With {{ store.duplicants }} Duplicants this chain makes at most

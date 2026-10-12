@@ -116,18 +116,23 @@ function has(id: string) {
         <template v-if="randomSlots.length">
           <p class="hint">
             Plus {{ randomSlots.map((s) => `${s.count} seed-random on ${s.world}`).join(', ') }}.
-            Tick the ones you have found:
+            How many of each you have found (a geyser's output is per geyser, so five vents make
+            five times as much):
           </p>
           <div class="list">
-            <label v-for="g in geyserTypes" :key="g.id" class="check">
+            <div v-for="g in geyserTypes" :key="g.id" class="critter">
+              <span :class="{ have: (store.geysers.get(g.id) ?? 0) > 0 }">{{ g.name }}</span>
               <input
-                type="checkbox"
-                :checked="store.geysers.has(g.id)"
-                :disabled="store.guaranteed.has(g.id)"
-                @change="store.toggleGeyser(g.id)"
+                type="number"
+                class="num happiness"
+                min="0"
+                max="99"
+                step="1"
+                :value="store.geysers.get(g.id) ?? 0"
+                :aria-label="`${g.name} found`"
+                @change="store.setGeyser(g.id, Number(($event.target as HTMLInputElement).value))"
               />
-              {{ g.name }}
-            </label>
+            </div>
           </div>
         </template>
         <label v-for="[id, f] in store.guaranteedFeatureCounts" :key="id" class="count feature">
@@ -336,6 +341,9 @@ h2 {
   grid-template-columns: minmax(0, 1fr) 3.5rem;
   gap: 0.5rem;
   align-items: center;
+}
+.have {
+  font-weight: 700;
 }
 .happiness {
   width: 100%;

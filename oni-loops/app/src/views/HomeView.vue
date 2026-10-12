@@ -208,7 +208,8 @@ function plural(n: number, word: string): string {
         </p>
         <p>
           Set up your colony on the left so the answers match your game: which DLCs, which asteroid,
-          which geysers you have found, which critters you can ranch, how many Duplicants.
+          which geysers you have found and how many, which critters you can ranch, how many
+          Duplicants.
         </p>
       </div>
     </main>

@@ -9,8 +9,8 @@ export interface Colony {
   critters: Set<string> | null
   /** Cluster id the colony plays on, or null when unknown. */
   cluster: string | null
-  /** Geyser type ids ("molten_iron") the colony has access to. */
-  geysers: Set<string>
+  /** Geysers found, by type id ("molten_iron"), with how many: a geyser's output is per geyser. */
+  geysers: Map<string, number>
   /** Terrain features found, by prefab id ("OilWell"), with how many: a building on one is one per feature. */
   features: Map<string, number>
   /** How many Duplicants the colony has: the one thing a chain cannot build more of. */
@@ -93,7 +93,8 @@ export interface Chain {
   capped?: boolean
   /**
    * How far the biggest step overshoots what a colony would build, at the asked rate: 1 is
-   * the allowance (50 plants, 30 critters, 10 buildings, 2 geysers), 10 is ten times it.
+   * the allowance (50 plants, 30 critters, 10 buildings, or the geysers and terrain features
+   * the colony has found), 10 is ten times it.
    */
   strain: number
   strainNode?: Node
@@ -233,7 +234,7 @@ function sourceTier(p: Process, colony: Colony, tiers: Tiers): Tier | null {
   if (p.needs.feature && !((colony.features.get(p.needs.feature) ?? 0) > 0)) return 'none'
   switch (p.kind) {
     case 'geyser':
-      return colony.geysers.has(p.viaId) ? 'renewable' : 'none'
+      return (colony.geysers.get(p.viaId) ?? 0) > 0 ? 'renewable' : 'none'
     case 'worldgen':
       return tiers.worldTier(p.viaId) // null when the world is not in the colony's cluster
     case 'starmap':
@@ -365,7 +366,7 @@ export function findChains(
     return d < 0
   }
 
-  /** What a colony would build of each kind of thing for one product; Duplicants and terrain features are what it has. */
+  /** What a colony would build of each kind of thing for one product; Duplicants, geysers and terrain features are what it has. */
   function allowance(instance: NonNullable<Process['throughput']>['instance'], p: Process): number {
     return instanceCap(instance, p, colony)
   }
@@ -709,9 +710,9 @@ function retier(n: Node): { tier: Tier; size: number } {
 
 /** Nets what the chain takes from outside and makes besides the target, and finds its Duplicant ceiling. */
 /** What a colony would reasonably build of each kind of thing for one product. */
-const ALLOWANCE = { building: 10, plant: 50, critter: 30, geyser: 2 } as const
+const ALLOWANCE = { building: 10, plant: 50, critter: 30 } as const
 
-/** The allowance, or for Duplicants and terrain features what the colony has (at least 1, so a lack reads as strain, not infinity). */
+/** The allowance, or for Duplicants, geysers and terrain features what the colony has (at least 1, so a lack reads as strain, not infinity). */
 function instanceCap(
   instance: NonNullable<Process['throughput']>['instance'],
   p: Process,
@@ -719,6 +720,7 @@ function instanceCap(
 ): number {
   if (instance === 'duplicant') return colony.duplicants
   if (instance === 'feature') return Math.max(1, colony.features.get(p.needs.feature ?? '') ?? 0)
+  if (instance === 'geyser') return Math.max(1, colony.geysers.get(p.viaId) ?? 0)
   return ALLOWANCE[instance]
 }
 
