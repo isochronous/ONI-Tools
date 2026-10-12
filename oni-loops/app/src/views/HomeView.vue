@@ -9,9 +9,9 @@ import TargetPicker from '../components/TargetPicker.vue'
 import { gameData, label } from '../data/load'
 import { answer, nodesOf, type Chain } from '../model/chains'
 import { chainKeys, facetsOf, passes, processKeys } from '../model/filters'
-import { buildGraph, DEFAULT_HAPPINESS, fmt } from '../model/graph'
+import { buildGraph, fmt } from '../model/graph'
 import { computeTiers, TIER_LABEL } from '../model/tiers'
-import { useColonyStore } from '../stores/colony'
+import { FOUNTAIN_KG_PER_CYCLE, useColonyStore } from '../stores/colony'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,7 +19,11 @@ const store = useColonyStore()
 // The graph carries the critters' egg rates, which depend on their happiness, so it follows the colony.
 const graph = computed(() =>
   buildGraph(gameData, {
-    happiness: (id) => store.happiness[id] ?? DEFAULT_HAPPINESS,
+    happiness: (id) => store.happinessOf(id),
+    drink:
+      store.ranching.drink === 'none'
+        ? undefined
+        : { tag: store.ranching.drink, kgPerCycle: FOUNTAIN_KG_PER_CYCLE },
     mutation: (id) => store.mutations[id],
   }),
 )

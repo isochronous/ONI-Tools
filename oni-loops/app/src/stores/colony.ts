@@ -25,11 +25,35 @@ interface Saved {
   demandItems: number
   /** Filter keys ("machine:Kiln") the player has switched off. */
   hidden: string[]
-  /** Tame critter happiness by critter id, where it differs from the groomed default. */
+  /** Tame critter happiness by critter id, where the player overrode the ranching default. */
   happiness: Record<string, number>
+  /** What every stable has: grooming, a fountain and its drink, a condo. */
+  ranching?: Ranching
   /** The mutation each plant's seeds carry, by plant id, where one is chosen. */
   mutations: Record<string, string>
 }
+
+/** What the colony's stables provide, which sets every tame critter's happiness. */
+export interface Ranching {
+  /** Groomed at a Grooming Station: +5. */
+  groomed: boolean
+  /** The liquid in the Critter Fountains (the Aquatic Critter Fountain for fish): Brackene +5, Squid Ink +3. */
+  drink: 'none' | 'Milk' | 'Ink'
+  /** A Critter Condo in the stable: +1. */
+  condo: boolean
+}
+
+/** Happiness each fountain drink gives (MilkFeederConfig: HadMilk, HadInk), and the game's names for the elements. */
+export const DRINKS: Record<Exclude<Ranching['drink'], 'none'>, { happiness: number }> = {
+  Milk: { happiness: 5 },
+  Ink: { happiness: 3 },
+}
+/** One feeding is 5 kg and its effect lasts one cycle, so a topped-up critter drinks 5 kg a cycle. */
+export const FOUNTAIN_KG_PER_CYCLE = 5
+/** Being tame: -1. */
+const TAME_HAPPINESS = -1
+const GROOMED_HAPPINESS = 5
+const CONDO_HAPPINESS = 1
 
 function load(): Partial<Saved> | null {
   try {
@@ -70,6 +94,7 @@ export const useColonyStore = defineStore('colony', () => {
   const demandItems = ref(saved?.demandItems ?? 10)
   const hidden = ref(new Set(saved?.hidden ?? []))
   const happiness = ref<Record<string, number>>({ ...(saved?.happiness ?? {}) })
+  const ranching = ref<Ranching>({ groomed: true, drink: 'none', condo: false, ...saved?.ranching })
   const mutations = ref<Record<string, string>>({ ...(saved?.mutations ?? {}) })
 
   const clusterData = computed(() => gameData.clusters.find((c) => c.id === cluster.value) ?? null)
@@ -92,6 +117,19 @@ export const useColonyStore = defineStore('colony', () => {
         [...guaranteedFeatureCounts.value].map(([id, f]) => [id, featureCounts.value[id] ?? f.min]),
       ),
   )
+
+  /** What the stables give a tame critter: tame, plus grooming, the fountain's drink and a condo as chosen. */
+  const defaultHappiness = computed(
+    () =>
+      TAME_HAPPINESS +
+      (ranching.value.groomed ? GROOMED_HAPPINESS : 0) +
+      (ranching.value.drink === 'none' ? 0 : DRINKS[ranching.value.drink].happiness) +
+      (ranching.value.condo ? CONDO_HAPPINESS : 0),
+  )
+  /** A critter's happiness: its own number if the player set one, else the stables' default. */
+  function happinessOf(id: string): number {
+    return happiness.value[id] ?? defaultHappiness.value
+  }
 
   const colony = computed<Colony>(() => ({
     dlcs: dlcs.value,
@@ -116,6 +154,7 @@ export const useColonyStore = defineStore('colony', () => {
         demandItems: demandItems.value,
         hidden: [...hidden.value],
         happiness: happiness.value,
+        ranching: ranching.value,
         mutations: mutations.value,
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
@@ -164,8 +203,13 @@ export const useColonyStore = defineStore('colony', () => {
     mutations.value = next
   }
 
+  /** A critter's own happiness; set to the stables' default it follows the stables again. */
   function setHappiness(id: string, value: number) {
-    happiness.value = { ...happiness.value, [id]: Math.max(-10, Math.min(10, Number(value) || 0)) }
+    const n = Math.max(-10, Math.min(10, Number(value) || 0))
+    const next = { ...happiness.value }
+    if (n === defaultHappiness.value) delete next[id]
+    else next[id] = n
+    happiness.value = next
   }
 
   function toggleHidden(key: string) {
@@ -185,7 +229,9 @@ export const useColonyStore = defineStore('colony', () => {
     hidden.value = new Set()
   }
 
-  watch([colony, hidden, demandKg, demandItems, happiness, mutations], save, { deep: true })
+  watch([colony, hidden, demandKg, demandItems, happiness, ranching, mutations], save, {
+    deep: true,
+  })
 
   return {
     dlcs,
@@ -201,6 +247,9 @@ export const useColonyStore = defineStore('colony', () => {
     features,
     hidden,
     happiness,
+    ranching,
+    defaultHappiness,
+    happinessOf,
     mutations,
     colony,
     toggleDlc,

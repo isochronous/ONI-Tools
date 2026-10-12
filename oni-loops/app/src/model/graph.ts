@@ -82,6 +82,11 @@ export interface Process {
   wildFactor?: number
   /** Human-readable qualifiers shown next to the step. */
   notes: string[]
+  /**
+   * Consumed per run but not sourced by the search: a Critter Fountain's drink, which the
+   * player runs or not. Shown with the step and summed for the chain, never a chain input.
+   */
+  upkeep?: Flow[]
   /** True when a building sends its product down a pipe rather than dropping it in the world. */
   pipedOutput?: boolean
   /** Rate per instance, when the mechanism has one (phase changes and off-gassing have none). */
@@ -195,6 +200,8 @@ const ROT_PILE_SECONDS = 600
 export interface GraphOptions {
   /** A tame critter's happiness, by critter id; tame and groomed is 4 (groomed +5, tame -1). */
   happiness?: (critterId: string) => number
+  /** What tame critters drink at a Critter Fountain, per critter per cycle, when the colony runs one. */
+  drink?: { tag: string; kgPerCycle: number }
   /** The mutation a plant's seeds carry, by plant id; undefined for the plain plant. */
   mutation?: (plantId: string) => string | undefined
 }
@@ -206,6 +213,26 @@ export function mutationFits(m: PlantMutationData, plantId: string): boolean {
 
 /** Happiness of a tame, groomed critter: the +5 of grooming less the -1 of being tame. */
 export const DEFAULT_HAPPINESS = 4
+
+/**
+ * HappinessMonitor's bands: happy from 1 up, glum at -1 and below, miserable at -10 and
+ * below. A glum or miserable tame critter's metabolism drops by 80 %; a miserable one's
+ * fertility is cancelled outright.
+ */
+export const GLUM_HAPPINESS = -1
+export const MISERABLE_HAPPINESS = -10
+const GLUM_METABOLISM = 0.2
+
+/** Egg rate relative to the base rate: 1 + 2.25 × happiness while above 0, none when miserable. */
+function fertilityFactor(d: GameData, happiness: number): number {
+  if (happiness <= MISERABLE_HAPPINESS) return 0
+  return 1 + (d.tuning.fertilityPerHappiness ?? 2.25) * Math.max(0, happiness)
+}
+
+/** How fast a tame critter eats, and so excretes, relative to a content one. */
+function metabolismFactor(happiness: number): number {
+  return happiness <= GLUM_HAPPINESS ? GLUM_METABOLISM : 1
+}
 
 export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
   const processes: Process[] = []
@@ -530,10 +557,12 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         // hatchling put down or as old age, so what the critter drops comes with its diet: per
         // kilogram eaten, the eggs laid in the time that kilogram feeds (or, for a critter that
         // lays none, the share of a lifetime it is).
-        const kgPerCycle = c.caloriesBurnedPerCycle ? c.caloriesBurnedPerCycle / g.caloriesPerKg : 0
         const happiness = options.happiness?.(c.id) ?? DEFAULT_HAPPINESS
+        const kgPerCycle = c.caloriesBurnedPerCycle
+          ? (c.caloriesBurnedPerCycle * metabolismFactor(happiness)) / g.caloriesPerKg
+          : 0
         const bornPerCycle = c.cyclesPerEgg
-          ? (1 + (d.tuning.fertilityPerHappiness ?? 2.25) * Math.max(0, happiness)) / c.cyclesPerEgg
+          ? fertilityFactor(d, happiness) / c.cyclesPerEgg
           : c.lifespanCycles
             ? 1 / c.lifespanCycles
             : 0
@@ -554,9 +583,8 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
           outputs: [{ tag: g.produces, amount: g.rate }, ...drops],
           dlc: c.dlc,
           needs: { critter: c.id },
-          throughput: c.caloriesBurnedPerCycle
-            ? { runsPerCycle: c.caloriesBurnedPerCycle / g.caloriesPerKg, instance: 'critter' }
-            : undefined,
+          throughput:
+            kgPerCycle > 0 ? { runsPerCycle: kgPerCycle, instance: 'critter' } : undefined,
           wildFactor: d.tuning.wildCritterCalorieBurnRatio,
           notes: c.caloriesBurnedPerCycle
             ? [
@@ -583,20 +611,23 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
           : ['on death'],
       })
     }
-    if (c.egg && c.cyclesPerEgg) {
+    const eggHappiness = options.happiness?.(c.id) ?? DEFAULT_HAPPINESS
+    if (c.egg && c.cyclesPerEgg && fertilityFactor(d, eggHappiness) > 0) {
       // Normal ranching: a tame, fed adult lays an egg every so many cycles, faster the happier
-      // it is, so an egg costs what the adult eats in that time. The diet with the most foods
+      // it is (none at all when miserable), so an egg costs what the adult eats in that time,
+      // plus what it drinks at a fountain if the colony runs one. The diet with the most foods
       // stands for its menu.
-      const happiness = options.happiness?.(c.id) ?? DEFAULT_HAPPINESS
-      const cyclesPerEgg =
-        c.cyclesPerEgg / (1 + (d.tuning.fertilityPerHappiness ?? 2.25) * Math.max(0, happiness))
+      const happiness = eggHappiness
+      const cyclesPerEgg = c.cyclesPerEgg / fertilityFactor(d, happiness)
       const diet = (c.diet ?? [])
         .filter((x) => x.caloriesPerKg > 0 && x.eats.length)
         .sort((a, b) => b.eats.length - a.eats.length)[0]
       const eats =
         diet && c.caloriesBurnedPerCycle
-          ? (c.caloriesBurnedPerCycle * cyclesPerEgg) / diet.caloriesPerKg
+          ? (c.caloriesBurnedPerCycle * metabolismFactor(happiness) * cyclesPerEgg) /
+            diet.caloriesPerKg
           : 0
+      const drink = options.drink
       const inputs: Flow[] =
         eats > 0 && diet
           ? [
@@ -616,8 +647,14 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         dlc: c.dlc,
         needs: { critter: c.id },
         throughput: { runsPerCycle: 1 / cyclesPerEgg, instance: 'critter' },
+        upkeep: drink ? [{ tag: drink.tag, amount: drink.kgPerCycle * cyclesPerEgg }] : undefined,
         notes: [
           `one every ${fmt(cyclesPerEgg)} cycles when tame and fed, at happiness ${fmt(happiness)}`,
+          ...(drink
+            ? [
+                `drinks ${fmt(drink.kgPerCycle)} kg of ${label(drink.tag)} a cycle at a Critter Fountain`,
+              ]
+            : []),
         ],
         wildFactor: d.tuning.wildCritterGrowthModifier,
       })
@@ -635,9 +672,12 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         notes: ['incubated, then raised to an adult'],
       })
     }
-    if (c.growDrop) {
-      // One per baby that grows up, so one per egg the parent lays.
-      const parent = c.adult ? d.critters.find((a) => a.id === c.adult) : undefined
+    // One per baby that grows up, so one per egg the parent lays; none when the parent is miserable.
+    const parent = c.adult ? d.critters.find((a) => a.id === c.adult) : undefined
+    const parentFertility = parent?.cyclesPerEgg
+      ? fertilityFactor(d, options.happiness?.(parent.id) ?? DEFAULT_HAPPINESS)
+      : 1
+    if (c.growDrop && parentFertility > 0) {
       add({
         kind: 'grow',
         via: c.name,
@@ -647,14 +687,7 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         dlc: c.dlc,
         needs: { critter: c.id },
         throughput: parent?.cyclesPerEgg
-          ? {
-              runsPerCycle:
-                (1 +
-                  (d.tuning.fertilityPerHappiness ?? 2.25) *
-                    Math.max(0, options.happiness?.(parent.id) ?? DEFAULT_HAPPINESS)) /
-                parent.cyclesPerEgg,
-              instance: 'critter',
-            }
+          ? { runsPerCycle: parentFertility / parent.cyclesPerEgg, instance: 'critter' }
           : undefined,
         notes: ['when it grows up'],
       })
@@ -718,12 +751,19 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         ],
       })
     }
-    if (c.fertilityMilk && !c.adult && c.cyclesPerEgg) {
+    const milkHappiness = options.happiness?.(c.id) ?? DEFAULT_HAPPINESS
+    if (
+      c.fertilityMilk &&
+      !c.adult &&
+      c.cyclesPerEgg &&
+      fertilityFactor(d, milkHappiness) > 0 &&
+      !(c.fertilityMilk.requiresHappy && milkHappiness < 1)
+    ) {
       // Milking spends part of the fertility bar, so each milking costs that fraction of an
-      // egg's wait (faster when happier, like laying) and the eggs it would have become.
-      const happiness = options.happiness?.(c.id) ?? DEFAULT_HAPPINESS
-      const cyclesPerEgg =
-        c.cyclesPerEgg / (1 + (d.tuning.fertilityPerHappiness ?? 2.25) * Math.max(0, happiness))
+      // egg's wait (faster when happier, like laying) and the eggs it would have become. Some
+      // critters give milk only while happy, and a miserable one has no fertility to spend.
+      const happiness = milkHappiness
+      const cyclesPerEgg = c.cyclesPerEgg / fertilityFactor(d, happiness)
       const cyclesPerMilking = cyclesPerEgg * c.fertilityMilk.fertilityConsumed
       add({
         kind: 'milk',

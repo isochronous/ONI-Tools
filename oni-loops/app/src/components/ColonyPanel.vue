@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { gameData } from '../data/load'
 import type { PlantMutationData } from '../data/types'
-import { DEFAULT_HAPPINESS, mutationFits } from '../model/graph'
+import { mutationFits } from '../model/graph'
 import { randomGeyserSlots } from '../model/tiers'
 import { useColonyStore } from '../stores/colony'
 
@@ -35,7 +35,7 @@ const critters = computed(() =>
 )
 
 function happinessOf(id: string): number {
-  return store.happiness[id] ?? DEFAULT_HAPPINESS
+  return store.happinessOf(id)
 }
 const allIds = computed(() => critters.value.map((c) => c.id))
 
@@ -228,9 +228,31 @@ function has(id: string) {
         <button type="button" class="link" @click="store.assumeAllCritters()">Assume all</button>
       </p>
       <template v-if="showCritters">
+        <div class="ranching">
+          <label class="check">
+            <input v-model="store.ranching.groomed" type="checkbox" />
+            Groomed at a Grooming Station (+5)
+          </label>
+          <label class="check">
+            <input v-model="store.ranching.condo" type="checkbox" />
+            A Critter Condo in the stable (+1)
+          </label>
+          <label class="drink">
+            <span>Critter Fountains</span>
+            <select v-model="store.ranching.drink" aria-label="Critter Fountain drink">
+              <option value="none">None</option>
+              <option value="Milk">Brackene (+5)</option>
+              <option value="Ink">Squid Ink (+3)</option>
+            </select>
+          </label>
+        </div>
         <p class="hint">
-          Happiness sets how fast a tame critter lays eggs: 1 + 2.25 × happiness times the base
-          rate. Tame is −1, groomed +5, cramped −5, so a groomed critter in a proper stable is 4.
+          A fountain (the Aquatic Critter Fountain for fish) gives each critter 5 kg of its drink
+          a cycle; the chains count it as drunk, not made. Tame is −1, so these put a critter at
+          {{ store.defaultHappiness }}. Eggs come 1 + 2.25 × happiness times as fast while
+          happiness is above 0; at −1 or below a critter eats a fifth as much, and at −10 it lays
+          none. Set a critter's own number below for a crowded (−1 a head) or confined (−10)
+          stable.
         </p>
         <div class="list">
           <div v-for="c in critters" :key="c.id" class="critter">
@@ -252,9 +274,14 @@ function has(id: string) {
               max="10"
               step="1"
               :value="happinessOf(c.id)"
+              :class="{ own: c.id in store.happiness }"
               :aria-label="`${c.name} happiness`"
-              title="Happiness"
-              @change="store.setHappiness(c.id, Number(($event.target as HTMLInputElement).value))"
+              :title="
+                c.id in store.happiness ? 'Happiness, set by you' : 'Happiness, from the stables'
+              "
+              @change="
+                store.setHappiness(c.id, Number(($event.target as HTMLInputElement).value))
+              "
             />
           </div>
         </div>
@@ -351,6 +378,25 @@ h2 {
   background: var(--raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
+  font-size: 0.875rem;
+}
+.happiness.own {
+  border-color: var(--accent);
+}
+.ranching {
+  display: grid;
+  gap: 0.1rem;
+  margin-top: 0.4rem;
+}
+.drink {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9rem;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.2rem 0;
+}
+.drink select {
+  padding: 0.15rem 0.35rem;
   font-size: 0.875rem;
 }
 .list {

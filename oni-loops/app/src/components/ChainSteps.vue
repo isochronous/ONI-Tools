@@ -254,6 +254,11 @@ function leftBy(i: Input): string {
   return list([...new Set((i.reusedFrom ?? []).map((f) => f.process.via))])
 }
 
+/** What the step's critters drink at the fountains, per cycle at this rate: "15 kg Brackene". */
+function drinks(n: Node): string {
+  return list((n.process.upkeep ?? []).map((u) => qty(at(n.runs * u.amount), u.tag)))
+}
+
 /**
  * How many of what does the step the rate keeps busy: "one running 3% of the time",
  * "4 of them", "2 Duplicants once a cycle each", "1 geyser".
@@ -340,6 +345,9 @@ function doer(n: Node): string | undefined {
                   stepText(row.node)
                 }}</span
               ><span v-if="countText(row.node)" class="count"> ({{ countText(row.node) }})</span
+              ><span v-if="drinks(row.node)" class="count">{{
+                ' drinking ' + drinks(row.node)
+              }}</span
               ><template v-if="gathered(row.node)">{{
                 ' takes ' + gathered(row.node) + ' from above'
               }}</template

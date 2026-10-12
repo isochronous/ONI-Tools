@@ -46,6 +46,15 @@ function strainText(p: Process): string {
   return 'more than a colony would build for this.'
 }
 
+/** What the chain's critters drink at the fountains each cycle, summed by drink: "15 kg Brackene". */
+const drinkText = computed(() => {
+  const total = new Map<string, number>()
+  for (const n of nodesOf(props.chain))
+    for (const u of n.process.upkeep ?? [])
+      total.set(u.tag, (total.get(u.tag) ?? 0) + u.amount * n.runs * props.perCycle)
+  return list([...total].map(([tag, amount]) => qty(amount, tag)))
+})
+
 /** Joins names the way a sentence would: "a", "a and b", "a, b, and c". */
 function list(parts: string[]): string {
   if (parts.length <= 1) return parts[0] ?? ''
@@ -125,7 +134,7 @@ const costText = computed(() => {
 
     <ChainSteps :root="chain.root" :rate="perCycle" :tiers="tiers" />
 
-    <p v-if="chain.needs.length || chain.makes.length" class="foot">
+    <p v-if="chain.needs.length || chain.makes.length || drinkText" class="foot">
       Each cycle, for {{ fmt(perCycle) }}{{ unitOf(target) }} of {{ label(target) }}:
       <template v-if="chain.needs.length">
         <template v-for="(i, k) in chain.needs" :key="i.tag"
@@ -141,7 +150,8 @@ const costText = computed(() => {
       </template>
       <template v-if="chain.makes.length">
         {{ list(chain.makes.map((f) => qty(f.amount * perCycle, f.tag))) }} out</template
-      >.
+      ><template v-if="!chain.needs.length && !chain.makes.length">nothing in or out</template
+      >.<template v-if="drinkText"> Plus {{ drinkText }} drunk at the Critter Fountains.</template>
     </p>
   </article>
 </template>
