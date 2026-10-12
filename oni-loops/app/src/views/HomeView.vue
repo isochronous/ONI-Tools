@@ -8,26 +8,38 @@ import ProcessList from '../components/ProcessList.vue'
 import TagIcon from '../components/TagIcon.vue'
 import TargetPicker from '../components/TargetPicker.vue'
 import { gameData, label } from '../data/load'
-import { answer, nodesOf, type Chain } from '../model/chains'
+import { nodesOf, type Answer, type Chain } from '../model/chains'
 import { chainKeys, facetsOf, passes, processKeys } from '../model/filters'
 import { buildGraph, fmt } from '../model/graph'
 import { computeTiers, TIER_LABEL } from '../model/tiers'
+import { plainColony, relink, search, type PlainGraphOptions } from '../search/search'
 import { FOUNTAIN_KG_PER_CYCLE, useColonyStore } from '../stores/colony'
 
 const route = useRoute()
 const router = useRouter()
 const store = useColonyStore()
-// The graph carries the critters' egg rates, which depend on their happiness, so it follows the colony.
-const graph = computed(() =>
-  buildGraph(gameData, {
-    happiness: (id) => store.happinessOf(id),
-    drink:
-      store.ranching.drink === 'none'
-        ? undefined
-        : { tag: store.ranching.drink, kgPerCycle: FOUNTAIN_KG_PER_CYCLE },
-    mutation: (id) => store.mutations[id],
-  }),
-)
+// The graph carries the critters' egg rates, which depend on their happiness, so it follows
+// the colony. The page keeps a graph of its own for what it shows; the search worker builds
+// the same one from these choices as plain records.
+const graphOptions = computed<PlainGraphOptions>(() => ({
+  happiness: Object.fromEntries(
+    gameData.critters.filter((c) => !c.adult).map((c) => [c.id, store.happinessOf(c.id)]),
+  ),
+  drink:
+    store.ranching.drink === 'none'
+      ? undefined
+      : { tag: store.ranching.drink, kgPerCycle: FOUNTAIN_KG_PER_CYCLE },
+  defaultHappiness: store.defaultHappiness,
+  mutations: { ...store.mutations },
+}))
+const graph = computed(() => {
+  const o = graphOptions.value
+  return buildGraph(gameData, {
+    happiness: (id) => o.happiness[id] ?? o.defaultHappiness,
+    drink: o.drink,
+    mutation: (id) => o.mutations[id],
+  })
+})
 
 const target = computed<string | null>(
   () => (typeof route.query.t === 'string' && route.query.t) || null,
@@ -61,23 +73,32 @@ const perCycle = computed({
 const tiers = computed(() =>
   computeTiers(gameData, graph.value, store.colony, store.clusterData, store.geysers),
 )
-const result = computed(() =>
-  target.value
-    ? answer(
-        graph.value,
-        target.value,
-        { ...store.colony, excluded: store.hidden },
-        tiers.value,
-        perCycle.value,
-      )
-    : null,
-)
+// The answers come from the search worker; the page shows the last ones until the next arrive.
+const result = ref<Answer | null>(null)
 // The filter bar lists what the answer can depend on with nothing switched off, so a chip is
 // never lost to the filters: when the unfiltered answer is not the shown one it is searched too.
-const unfiltered = computed(() =>
-  target.value && store.hidden.size
-    ? answer(graph.value, target.value, store.colony, tiers.value, perCycle.value)
-    : result.value,
+const unfiltered = ref<Answer | null>(null)
+const searching = ref(false)
+let latest = 0
+watch(
+  [target, graphOptions, () => store.colony, () => store.hidden, perCycle],
+  async ([t, options, colony, hidden, per]) => {
+    const run = ++latest
+    if (!t) {
+      result.value = unfiltered.value = null
+      searching.value = false
+      return
+    }
+    searching.value = true
+    const shown = search(t, per, options, plainColony(colony, hidden))
+    const all = hidden.size ? search(t, per, options, plainColony(colony, [])) : shown
+    const [a, b] = await Promise.all([shown, all])
+    if (run !== latest) return // a newer request is on its way
+    result.value = relink(a, graph.value)
+    unfiltered.value = b === a ? result.value : relink(b, graph.value)
+    searching.value = false
+  },
+  { immediate: true },
 )
 /** Keys the bar has listed for each target this session, kept listed so chips do not vanish. */
 const seen = new Map<string, Set<string>>()
@@ -231,6 +252,8 @@ function plural(n: number, word: string): string {
           />
         </section>
       </template>
+
+      <p v-else-if="target && searching" class="meta">Searching…</p>
 
       <div v-else class="intro">
         <p>

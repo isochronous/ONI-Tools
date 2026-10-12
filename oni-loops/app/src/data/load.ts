@@ -41,6 +41,9 @@ export function chooseDataSet(spacedOut: boolean) {
 }
 
 function chosenId(): string {
+  // A worker has no localStorage; the page tells it which set it is on before this loads.
+  const told = (globalThis as { ONI_LOOPS_DATASET?: string }).ONI_LOOPS_DATASET
+  if (told) return told
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
     ?.env?.ONI_LOOPS_DATASET
   if (env) return env
