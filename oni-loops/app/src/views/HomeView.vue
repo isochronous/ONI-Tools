@@ -164,6 +164,8 @@ function plural(n: number, word: string): string {
           @toggle="store.toggleHidden"
           @set="store.setHidden"
           @clear="store.clearHidden"
+          @rule="store.setRule"
+          @dissolve="store.dissolveRule"
         />
 
         <section class="block">

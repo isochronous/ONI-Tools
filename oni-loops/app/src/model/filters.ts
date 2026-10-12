@@ -1,5 +1,5 @@
 import { label } from '../data/load'
-import type { Graph, Process } from './graph'
+import { isCookedFood, type Graph, type Process } from './graph'
 import { nodesOf, type Answer, type Chain } from './chains'
 
 /**
@@ -20,10 +20,25 @@ export const FACET_GROUPS: { id: FacetGroup; title: string }[] = [
 
 /** Food that comes out of a fabricator (a Gas Range, a Dehydrator) is its own group; raw crops and drops stay materials. */
 function materialGroup(graph: Graph, tag: string): FacetGroup {
-  const cooked =
-    graph.kinds.get(tag) === 'food' &&
-    (graph.byOutput.get(tag) ?? []).some((p) => p.kind === 'recipe')
-  return cooked ? 'food' : 'material'
+  return isCookedFood(graph, tag) ? 'food' : 'material'
+}
+
+/**
+ * A whole group switched off ("no critters at all") is one key, `critter:*`, which the search
+ * understands as a rule rather than a list: no critter step can come back through a route
+ * the list did not know about yet.
+ */
+export function groupRule(group: FacetGroup): string {
+  return `${group}:*`
+}
+
+export function groupOf(key: string): FacetGroup {
+  return key.slice(0, key.indexOf(':')) as FacetGroup
+}
+
+/** True when the key is switched off, by itself or by its group's rule. */
+export function isHidden(key: string, hidden: Set<string>): boolean {
+  return hidden.has(key) || hidden.has(groupRule(groupOf(key)))
 }
 
 export interface Facet {
@@ -111,12 +126,18 @@ export function facetsOf(
 ): Facet[] {
   const possible = usesIn(graph, all)
   const uses = all === shown ? possible : usesIn(graph, shown)
-  const keys = new Set<string>([...possible.keys(), ...uses.keys(), ...hidden, ...keep])
+  // With nothing switched off there is nothing to be blocked by: the list is what is used.
+  const keys = new Set<string>([
+    ...possible.keys(),
+    ...uses.keys(),
+    ...hidden,
+    ...(hidden.size ? keep : []),
+  ])
   const facets: Facet[] = []
   for (const k of keys) {
-    const i = k.indexOf(':')
-    const group = k.slice(0, i) as FacetGroup
-    const id = k.slice(i + 1)
+    const group = groupOf(k)
+    const id = k.slice(k.indexOf(':') + 1)
+    if (id === '*') continue // a group's rule is not a chip
     const n = uses.get(k) ?? 0
     facets.push({
       key: k,
@@ -125,13 +146,13 @@ export function facetsOf(
       name: label(id),
       uses: n,
       possible: possible.get(k) ?? 0,
-      state: hidden.has(k) ? 'off' : n > 0 ? 'on' : 'blocked',
+      state: isHidden(k, hidden) ? 'off' : n > 0 ? 'on' : 'blocked',
     })
   }
   return facets.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** True when nothing the keys name is hidden. */
+/** True when nothing the keys name is hidden, by itself or by a group's rule. */
 export function passes(keys: string[], hidden: Set<string>): boolean {
-  return !keys.some((k) => hidden.has(k))
+  return !keys.some((k) => isHidden(k, hidden))
 }

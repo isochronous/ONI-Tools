@@ -1,5 +1,5 @@
 import type { Flow, Graph, Process } from './graph'
-import { stepLabel } from './graph'
+import { isCookedFood, stepLabel } from './graph'
 import { TIER_ORDER, type Tier, type Tiers } from './tiers'
 
 /** What the player's colony has access to. Changing any of it changes the answers. */
@@ -122,18 +122,28 @@ export function isAvailable(p: Process, colony: Colony): string | null {
   return null
 }
 
-function excludedTag(tag: string, excluded: Set<string>): boolean {
-  return excluded.has('material:' + tag) || excluded.has('food:' + tag)
+/**
+ * A hidden material or cooked food, by its own key or by its group's rule (`material:*`,
+ * `food:*`); which group a tag is in takes the graph, so without one a group rule covers both.
+ */
+function excludedTag(tag: string, excluded: Set<string>, graph?: Graph): boolean {
+  if (excluded.has('material:' + tag) || excluded.has('food:' + tag)) return true
+  const material = excluded.has('material:*')
+  const food = excluded.has('food:*')
+  if (!material && !food) return false
+  if (!graph || (material && food)) return true
+  return isCookedFood(graph, tag) ? food : material
 }
 
 /** True when the player has hidden what runs the process, or one of its fixed inputs. */
-export function isExcluded(p: Process, colony: Colony): boolean {
+export function isExcluded(p: Process, colony: Colony, graph?: Graph): boolean {
   const ex = colony.excluded
   if (!ex || ex.size === 0) return false
-  if (p.needs.building && ex.has('machine:' + p.needs.building)) return true
-  if (p.needs.critter && ex.has('critter:' + p.needs.critter)) return true
-  if (p.needs.plant && ex.has('plant:' + p.needs.plant)) return true
-  return p.inputs.some((f) => !f.anyOf && excludedTag(f.tag, ex))
+  if (p.needs.building && (ex.has('machine:*') || ex.has('machine:' + p.needs.building)))
+    return true
+  if (p.needs.critter && (ex.has('critter:*') || ex.has('critter:' + p.needs.critter))) return true
+  if (p.needs.plant && (ex.has('plant:*') || ex.has('plant:' + p.needs.plant))) return true
+  return p.inputs.some((f) => !f.anyOf && excludedTag(f.tag, ex, graph))
 }
 
 let dlcNames: Record<string, string> = {}
@@ -375,10 +385,10 @@ export function findChains(
   function ways(tag: string, depth: number, need: number): Shape[] {
     if (depth > MAX_DEPTH) return []
     // A hidden material is not to be made along the way, only the target itself.
-    if (depth > 0 && colony.excluded && excludedTag(tag, colony.excluded)) return []
+    if (depth > 0 && colony.excluded && excludedTag(tag, colony.excluded, graph)) return []
     const groups = new Map<string, Shape>()
     for (const p of graph.byOutput.get(tag) ?? []) {
-      if (isAvailable(p, colony) || isExcluded(p, colony)) continue
+      if (isAvailable(p, colony) || isExcluded(p, colony, graph)) continue
       const shape = expand(p, tag, depth, need)
       if (!shape) continue
       // Ways that take the same inputs in the same proportions are one way with alternatives
@@ -546,11 +556,11 @@ export function findChains(
     ) => {
       if (found.length >= MAX_LOOPS) return
       for (const p of graph.byInput.get(current) ?? []) {
-        if (isAvailable(p, colony) || isExcluded(p, colony)) continue
+        if (isAvailable(p, colony) || isExcluded(p, colony, graph)) continue
         if (p.kind === 'worldgen' || p.kind === 'geyser' || p.kind === 'starmap') continue
         for (const o of p.outputs) {
           if (o.amount <= 0) continue
-          if (colony.excluded && excludedTag(o.tag, colony.excluded)) continue
+          if (colony.excluded && excludedTag(o.tag, colony.excluded, graph)) continue
           const step = { p, from: current, to: o.tag }
           if (o.tag === target) {
             // Only loops of exactly the current length, so shorter ones come first.

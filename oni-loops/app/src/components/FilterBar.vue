@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { FACET_GROUPS, type Facet } from '../model/filters'
+import { FACET_GROUPS, groupRule, type Facet, type FacetGroup } from '../model/filters'
 import TagIcon from './TagIcon.vue'
 
 const props = defineProps<{
@@ -13,6 +13,10 @@ const emit = defineEmits<{
   (e: 'toggle', key: string): void
   (e: 'set', keys: string[], off: boolean): void
   (e: 'clear'): void
+  /** The whole group switched off (a rule the search applies) or back on. */
+  (e: 'rule', group: FacetGroup, off: boolean): void
+  /** One chip of a ruled-off group switched on: the rule becomes the other chips, hidden. */
+  (e: 'dissolve', group: FacetGroup, hideKeys: string[]): void
 }>()
 
 const groups = computed(() =>
@@ -20,14 +24,30 @@ const groups = computed(() =>
     (g) => g.facets.length,
   ),
 )
-const active = computed(() => props.facets.filter((f) => props.hidden.has(f.key)).length)
+const active = computed(() => props.facets.filter((f) => f.state === 'off').length)
+
+/** True while the whole group is switched off by its rule. */
+function ruled(group: FacetGroup): boolean {
+  return props.hidden.has(groupRule(group))
+}
 
 /** The group's links: "all on" while any chip is off, "all off" while any is on. */
 function allOff(facets: Facet[]): boolean {
-  return facets.every((f) => props.hidden.has(f.key))
+  return facets.every((f) => f.state === 'off')
 }
 function anyOff(facets: Facet[]): boolean {
-  return facets.some((f) => props.hidden.has(f.key))
+  return facets.some((f) => f.state === 'off')
+}
+
+/** A chip under its group's rule comes back on by dissolving the rule into the other chips. */
+function clickChip(group: FacetGroup, facets: Facet[], f: Facet) {
+  if (ruled(group))
+    emit(
+      'dissolve',
+      group,
+      facets.filter((x) => x.key !== f.key).map((x) => x.key),
+    )
+  else emit('toggle', f.key)
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -80,13 +100,7 @@ function summary(): string {
               type="button"
               class="link"
               :disabled="!anyOff(g.facets)"
-              @click="
-                emit(
-                  'set',
-                  g.facets.map((f) => f.key),
-                  false,
-                )
-              "
+              @click="emit('rule', g.id, false)"
             >
               all on
             </button>
@@ -95,13 +109,7 @@ function summary(): string {
               type="button"
               class="link"
               :disabled="allOff(g.facets)"
-              @click="
-                emit(
-                  'set',
-                  g.facets.map((f) => f.key),
-                  true,
-                )
-              "
+              @click="emit('rule', g.id, true)"
             >
               all off
             </button>
@@ -116,7 +124,7 @@ function summary(): string {
             :class="f.state"
             :aria-pressed="f.state === 'off'"
             :title="chipTitle(f)"
-            @click="emit('toggle', f.key)"
+            @click="clickChip(g.id, g.facets, f)"
           >
             <span class="name"><TagIcon :tag="f.id" />{{ f.name }}</span>
             <span class="uses num">{{ f.state === 'blocked' ? '!' : f.uses }}</span>

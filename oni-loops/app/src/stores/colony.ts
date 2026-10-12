@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { chooseDataSet, dataSet, gameData, SPACED_OUT } from '../data/load'
 import { DEFAULT_DUPLICANTS, type Colony } from '../model/chains'
 import { guaranteedFeatures, guaranteedGeysers } from '../model/tiers'
+import { groupOf, groupRule, type FacetGroup } from '../model/filters'
 import type { SeedResult } from '../worldgen/seed'
 
 const STORAGE_KEY = 'oni-loops.colony'
@@ -277,6 +278,24 @@ export const useColonyStore = defineStore('colony', () => {
     hidden.value = new Set()
   }
 
+  /**
+   * A whole group switched off is one rule key (`critter:*`) rather than the chips listed,
+   * so nothing of the group can come back through a route the list did not know; switching
+   * the group on drops the rule and the group's own keys.
+   */
+  function setRule(group: FacetGroup, off: boolean) {
+    const next = new Set([...hidden.value].filter((k) => groupOf(k) !== group))
+    if (off) next.add(groupRule(group))
+    hidden.value = next
+  }
+
+  /** One chip of a ruled-off group switched back on: the rule becomes the other chips, hidden one by one. */
+  function dissolveRule(group: FacetGroup, hideKeys: string[]) {
+    const next = new Set([...hidden.value].filter((k) => k !== groupRule(group)))
+    for (const k of hideKeys) next.add(k)
+    hidden.value = next
+  }
+
   watch(
     [colony, hidden, demandKg, demandItems, happiness, ranching, mutations, seed, seedWorlds],
     save,
@@ -317,5 +336,7 @@ export const useColonyStore = defineStore('colony', () => {
     setMutation,
     setHidden,
     clearHidden,
+    setRule,
+    dissolveRule,
   }
 })

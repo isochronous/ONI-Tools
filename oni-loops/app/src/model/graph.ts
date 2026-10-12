@@ -197,6 +197,14 @@ const EXTREME_COLD_K = 223.15
 const ROT_PILE_SECONDS = 600
 
 /** What the player can tell the model beyond the game data. */
+/** Food that comes out of a fabricator (a Gas Range, a Dehydrator); raw crops and drops are materials. */
+export function isCookedFood(graph: Graph, tag: string): boolean {
+  return (
+    graph.kinds.get(tag) === 'food' &&
+    (graph.byOutput.get(tag) ?? []).some((p) => p.kind === 'recipe')
+  )
+}
+
 export interface GraphOptions {
   /** A tame critter's happiness, by critter id; tame and groomed is 4 (groomed +5, tame -1). */
   happiness?: (critterId: string) => number
