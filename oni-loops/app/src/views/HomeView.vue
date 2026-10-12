@@ -162,8 +162,8 @@ function plural(n: number, word: string): string {
               {{ plural(shownChains.length, 'way') }} shown<template v-if="filteredChains"
                 >, {{ filteredChains }} switched off above</template
               >, easiest first. Each step says how many buildings, critters, plants, or Duplicants
-              making {{ fmt(perCycle) }}{{ targetIsElement ? ' kg' : '' }} of
-              {{ label(result.target) }} a cycle keeps busy, at full uptime.
+              it takes to make {{ fmt(perCycle) }}{{ targetIsElement ? ' kg of' : '' }}
+              {{ label(result.target) }} per cycle, at full uptime.
             </template>
           </p>
           <div class="chains">
