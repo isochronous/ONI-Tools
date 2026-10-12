@@ -10,13 +10,14 @@ export default defineConfig({
   base: '/oni-loops/',
   // The game data lives one level above the app.
   server: { fs: { allow: ['..'] } },
-  plugins: [
-    vue(),
-    vueDevTools(),
-  ],
+  plugins: [vue(), vueDevTools()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // The worldgen engine runs in a module worker; its WASM glue is imported as-is, since
+  // pre-bundling would lose the .wasm it loads beside itself.
+  worker: { format: 'es' },
+  optimizeDeps: { exclude: ['@onimaxxing/worldgen'] },
 })

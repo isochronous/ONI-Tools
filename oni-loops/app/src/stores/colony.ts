@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { chooseDataSet, dataSet, gameData, SPACED_OUT } from '../data/load'
 import { DEFAULT_DUPLICANTS, type Colony } from '../model/chains'
 import { guaranteedFeatures, guaranteedGeysers } from '../model/tiers'
+import type { SeedResult } from '../worldgen/seed'
 
 const STORAGE_KEY = 'oni-loops.colony'
 const SAVED_VERSION = 5
@@ -31,6 +32,9 @@ interface Saved {
   ranching?: Ranching
   /** The mutation each plant's seeds carry, by plant id, where one is chosen. */
   mutations: Record<string, string>
+  /** The map seed last read, with what its worlds place, and which worlds the counts follow. */
+  seed?: SeedResult
+  seedWorlds?: string[]
 }
 
 /** What the colony's stables provide, which sets every tame critter's happiness. */
@@ -96,6 +100,9 @@ export const useColonyStore = defineStore('colony', () => {
   const happiness = ref<Record<string, number>>({ ...(saved?.happiness ?? {}) })
   const ranching = ref<Ranching>({ groomed: true, drink: 'none', condo: false, ...saved?.ranching })
   const mutations = ref<Record<string, string>>({ ...(saved?.mutations ?? {}) })
+  /** The seed read last, if any, and the worlds whose geysers the counts add up. */
+  const seed = ref<SeedResult | null>(saved?.seed ?? null)
+  const seedWorlds = ref<string[]>(saved?.seedWorlds ?? [])
 
   const clusterData = computed(() => gameData.clusters.find((c) => c.id === cluster.value) ?? null)
   /** Guaranteed by the cluster's worldgen rules, keyed by geyser type. */
@@ -156,6 +163,8 @@ export const useColonyStore = defineStore('colony', () => {
         happiness: happiness.value,
         ranching: ranching.value,
         mutations: mutations.value,
+        seed: seed.value ?? undefined,
+        seedWorlds: seedWorlds.value,
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     } catch {
@@ -183,6 +192,45 @@ export const useColonyStore = defineStore('colony', () => {
   function setFeature(id: string, count: number) {
     const n = Math.max(0, Math.min(99, Math.round(Number(count) || 0)))
     featureCounts.value = { ...featureCounts.value, [id]: n }
+  }
+
+  /**
+   * Takes a seed as read by the worldgen engine: the asteroid becomes the seed's cluster and
+   * the geyser and feature counts become what the start world places. The player can add the
+   * other worlds, and the counts stay theirs to edit afterwards.
+   */
+  function applySeed(result: SeedResult) {
+    seed.value = result
+    seedWorlds.value = result.worlds.filter((w) => w.start).map((w) => w.id)
+    if (gameData.clusters.some((c) => c.id === result.clusterId)) cluster.value = result.clusterId
+    applySeedCounts()
+  }
+
+  /** Counts a world of the seed in, or out, and sets the counts to the worlds that are in. */
+  function setSeedWorld(id: string, counted: boolean) {
+    const next = seedWorlds.value.filter((w) => w !== id)
+    if (counted) next.push(id)
+    seedWorlds.value = next
+    applySeedCounts()
+  }
+
+  function clearSeed() {
+    seed.value = null
+    seedWorlds.value = []
+  }
+
+  /** Every geyser type and feature the data set knows, set to what the counted worlds place. */
+  function applySeedCounts() {
+    if (!seed.value) return
+    const worlds = seed.value.worlds.filter((w) => seedWorlds.value.includes(w.id))
+    const geysers: Record<string, number> = {}
+    for (const g of gameData.geysers)
+      geysers[g.id] = worlds.reduce((n, w) => n + (w.geysers[g.id] ?? 0), 0)
+    geyserCounts.value = geysers
+    const features: Record<string, number> = {}
+    for (const f of gameData.features ?? [])
+      features[f.id] = worlds.reduce((n, w) => n + (w.features[f.id] ?? 0), 0)
+    featureCounts.value = features
   }
 
   function setCritter(id: string, available: boolean, all: string[]) {
@@ -229,9 +277,11 @@ export const useColonyStore = defineStore('colony', () => {
     hidden.value = new Set()
   }
 
-  watch([colony, hidden, demandKg, demandItems, happiness, ranching, mutations], save, {
-    deep: true,
-  })
+  watch(
+    [colony, hidden, demandKg, demandItems, happiness, ranching, mutations, seed, seedWorlds],
+    save,
+    { deep: true },
+  )
 
   return {
     dlcs,
@@ -251,12 +301,17 @@ export const useColonyStore = defineStore('colony', () => {
     defaultHappiness,
     happinessOf,
     mutations,
+    seed,
+    seedWorlds,
     colony,
     toggleDlc,
     setCritter,
     assumeAllCritters,
     setGeyser,
     setFeature,
+    applySeed,
+    setSeedWorld,
+    clearSeed,
     toggleHidden,
     setHappiness,
     setMutation,
