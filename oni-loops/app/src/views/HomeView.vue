@@ -72,16 +72,36 @@ const result = computed(() =>
       )
     : null,
 )
-const facets = computed(() =>
-  result.value ? facetsOf(graph.value, result.value, store.hidden) : [],
+// The filter bar lists what the answer can depend on with nothing switched off, so a chip is
+// never lost to the filters: when the unfiltered answer is not the shown one it is searched too.
+const unfiltered = computed(() =>
+  target.value && store.hidden.size
+    ? answer(graph.value, target.value, store.colony, tiers.value, perCycle.value)
+    : result.value,
 )
+/** Keys the bar has listed for each target this session, kept listed so chips do not vanish. */
+const seen = new Map<string, Set<string>>()
+const facets = computed(() => {
+  if (!result.value || !unfiltered.value) return []
+  const kept = seen.get(result.value.target) ?? new Set<string>()
+  return facetsOf(graph.value, unfiltered.value, result.value, store.hidden, kept)
+})
+watch(facets, (list) => {
+  if (!result.value) return
+  const kept = seen.get(result.value.target) ?? new Set<string>()
+  for (const f of list) kept.add(f.key)
+  seen.set(result.value.target, kept)
+})
 
 const shownChains = computed(() =>
   result.value
     ? result.value.chains.filter((c) => passes(chainKeys(graph.value, c), store.hidden))
     : [],
 )
-const filteredChains = computed(() => (result.value?.chains.length ?? 0) - shownChains.value.length)
+// Hidden counts are against the unfiltered answer, so a filter that empties the page says so.
+const filteredChains = computed(() =>
+  Math.max(0, (unfiltered.value?.chains.length ?? 0) - shownChains.value.length),
+)
 const shownLocked = computed(() =>
   result.value
     ? result.value.locked.filter((l) =>
@@ -89,7 +109,9 @@ const shownLocked = computed(() =>
       )
     : [],
 )
-const filteredLocked = computed(() => (result.value?.locked.length ?? 0) - shownLocked.value.length)
+const filteredLocked = computed(() =>
+  Math.max(0, (unfiltered.value?.locked.length ?? 0) - shownLocked.value.length),
+)
 const lockedReasons = computed(
   () => new Map(shownLocked.value.map((l) => [l.process.id, l.reason])),
 )

@@ -33,8 +33,15 @@ export interface Facet {
   /** The game's tag or prefab id. */
   id: string
   name: string
-  /** How many of the current chains depend on it. */
+  /** How many of the chains shown now depend on it. */
   uses: number
+  /** How many chains depend on it with nothing switched off. */
+  possible: number
+  /**
+   * `on`: in use. `off`: switched off by the player. `blocked`: switched on, but no chain
+   * shown uses it, because everything that would also needs something switched off.
+   */
+  state: 'on' | 'off' | 'blocked'
 }
 
 function key(group: FacetGroup, id: string): string {
@@ -76,24 +83,50 @@ export function chainKeys(graph: Graph, chain: Chain): string[] {
   return [...keys]
 }
 
-/**
- * Everything the current answer depends on, grouped and counted, for the filter bar. Hidden
- * keys stay listed (with no uses, since the search left them out) so they can be turned back on.
- */
-export function facetsOf(graph: Graph, answer: Answer, hidden?: Set<string>): Facet[] {
+/** How many of an answer's chains and sources depend on each key. */
+function usesIn(graph: Graph, answer: Answer): Map<string, number> {
   const uses = new Map<string, number>()
   const count = (keys: string[]) => {
     for (const k of keys) uses.set(k, (uses.get(k) ?? 0) + 1)
   }
   for (const c of answer.chains) count(chainKeys(graph, c))
   for (const { process } of answer.locked) count(processKeys(graph, process, answer.target))
-  for (const k of hidden ?? []) if (!uses.has(k)) uses.set(k, 0)
+  return uses
+}
+
+/**
+ * Everything the answer can depend on, grouped and counted, for the filter bar. The list is
+ * the union of what the unfiltered answer uses (`all`), what the answer shown now uses
+ * (`shown`, which may route around hidden things through other steps), the hidden keys, and
+ * `keep`, keys listed earlier for this target: a chip never vanishes because the chains that
+ * used it went away, it only changes state. Switched-off chips keep their unfiltered count,
+ * so the player can see what turning one back on would bring.
+ */
+export function facetsOf(
+  graph: Graph,
+  all: Answer,
+  shown: Answer,
+  hidden: Set<string>,
+  keep: Iterable<string> = [],
+): Facet[] {
+  const possible = usesIn(graph, all)
+  const uses = all === shown ? possible : usesIn(graph, shown)
+  const keys = new Set<string>([...possible.keys(), ...uses.keys(), ...hidden, ...keep])
   const facets: Facet[] = []
-  for (const [k, n] of uses) {
+  for (const k of keys) {
     const i = k.indexOf(':')
     const group = k.slice(0, i) as FacetGroup
     const id = k.slice(i + 1)
-    facets.push({ key: k, group, id, name: label(id), uses: n })
+    const n = uses.get(k) ?? 0
+    facets.push({
+      key: k,
+      group,
+      id,
+      name: label(id),
+      uses: n,
+      possible: possible.get(k) ?? 0,
+      state: hidden.has(k) ? 'off' : n > 0 ? 'on' : 'blocked',
+    })
   }
   return facets.sort((a, b) => a.name.localeCompare(b.name))
 }

@@ -22,9 +22,27 @@ const groups = computed(() =>
 )
 const active = computed(() => props.facets.filter((f) => props.hidden.has(f.key)).length)
 
-/** True when every chip of the group is switched off, so the group link offers to switch them back on. */
+/** The group's links: "all on" while any chip is off, "all off" while any is on. */
 function allOff(facets: Facet[]): boolean {
   return facets.every((f) => props.hidden.has(f.key))
+}
+function anyOff(facets: Facet[]): boolean {
+  return facets.some((f) => props.hidden.has(f.key))
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+function chipTitle(f: Facet): string {
+  switch (f.state) {
+    case 'off':
+      return f.possible
+        ? `Show the ${plural(f.possible, 'answer')} that use ${f.name}`
+        : `Show answers that use ${f.name}`
+    case 'blocked':
+      return `Switched on, but every answer that uses ${f.name} also needs something you switched off`
+    default:
+      return `Hide the ${plural(f.uses, 'answer')} that use ${f.name}`
+  }
 }
 
 function summary(): string {
@@ -57,19 +75,37 @@ function summary(): string {
       <div v-for="g in groups" :key="g.id" class="row">
         <span class="row-title eyebrow">
           {{ g.title }}
-          <button
-            type="button"
-            class="link all"
-            @click="
-              emit(
-                'set',
-                g.facets.map((f) => f.key),
-                !allOff(g.facets),
-              )
-            "
-          >
-            {{ allOff(g.facets) ? 'all on' : 'all off' }}
-          </button>
+          <span class="all">
+            <button
+              type="button"
+              class="link"
+              :disabled="!anyOff(g.facets)"
+              @click="
+                emit(
+                  'set',
+                  g.facets.map((f) => f.key),
+                  false,
+                )
+              "
+            >
+              all on
+            </button>
+            ·
+            <button
+              type="button"
+              class="link"
+              :disabled="allOff(g.facets)"
+              @click="
+                emit(
+                  'set',
+                  g.facets.map((f) => f.key),
+                  true,
+                )
+              "
+            >
+              all off
+            </button>
+          </span>
         </span>
         <div class="chips">
           <button
@@ -77,17 +113,13 @@ function summary(): string {
             :key="f.key"
             type="button"
             class="facet"
-            :class="{ off: hidden.has(f.key) }"
-            :aria-pressed="hidden.has(f.key)"
-            :title="
-              hidden.has(f.key)
-                ? `Show answers that use ${f.name}`
-                : `Hide the ${f.uses} answer${f.uses === 1 ? '' : 's'} that use ${f.name}`
-            "
+            :class="f.state"
+            :aria-pressed="f.state === 'off'"
+            :title="chipTitle(f)"
             @click="emit('toggle', f.key)"
           >
             <span class="name"><TagIcon :tag="f.id" />{{ f.name }}</span>
-            <span class="uses num">{{ f.uses }}</span>
+            <span class="uses num">{{ f.state === 'blocked' ? '!' : f.uses }}</span>
           </button>
         </div>
       </div>
@@ -144,6 +176,13 @@ function summary(): string {
   letter-spacing: 0;
   text-transform: none;
   font-weight: 400;
+  color: var(--muted);
+}
+.all .link:disabled {
+  color: var(--muted);
+  opacity: 0.5;
+  cursor: default;
+  text-decoration: none;
 }
 .chips {
   display: flex;
@@ -204,6 +243,20 @@ function summary(): string {
 .facet.off .uses {
   background: var(--warn);
   color: #fff;
+}
+/* Switched on but unused while other things are off: dimmed, with a mark in the count cell. */
+.facet.blocked {
+  color: var(--muted);
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+.facet.blocked :deep(.icon) {
+  opacity: 0.6;
+}
+.facet.blocked .uses {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
 }
 @media (max-width: 640px) {
   .row {
