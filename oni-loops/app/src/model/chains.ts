@@ -409,7 +409,9 @@ export function findChains(
    * irrigation and fertilizer: a way to tend less, not another source. Taken as its own way it
    * costs nothing and so wins every step below the root, and the farm never shows. Where the
    * tended plant is as reachable it is the way, with the wild one as its alternative; the wild
-   * one stands alone only when tending needs something the colony cannot get.
+   * one stands alone when tending needs something the colony cannot get, or when tending eats
+   * the chain's own product (a Seakomb fertilized with the Polluted Dirt its Pacu make): then
+   * the wild plant is a different way, one that may pay where the farm cannot.
    */
   function mergeWild(shapes: Shape[]): Shape[] {
     const kept: Shape[] = []
@@ -426,6 +428,7 @@ export function findChains(
               t.process.kind === p.kind &&
               t.process.wildFactor === undefined &&
               t.process.via === p.via.replace(' (wild)', '') &&
+              t.feedback === 0 &&
               TIER_ORDER[t.tier] <= TIER_ORDER[s.tier],
           )
         : undefined
