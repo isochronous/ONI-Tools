@@ -390,11 +390,17 @@ function has(id: string) {
   padding: 0.15rem 0.35rem;
   font-size: 0.875rem;
 }
+/* A scrolling list reads as a window onto something longer: an inset box with its own frame
+   and a scrollbar that is always there, so the cut-off rows are not mistaken for the whole. */
 .list {
   max-height: 18rem;
-  overflow: auto;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   margin-top: 0.4rem;
-  padding-right: 0.3rem;
+  padding: 0.2rem 0.4rem 0.2rem 0.5rem;
+  background: var(--inset);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
 }
 select {
   width: 100%;
