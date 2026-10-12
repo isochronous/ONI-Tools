@@ -53,7 +53,11 @@ for (const c of a.chains) {
     n.inputs.forEach((i) => i.node && walk(i.node))
   }
   walk(c.root)
-  console.log(`  [${c.worstTier}] ${c.size} steps: ${vias.join(' < ')}`)
+  const strain =
+    c.strain > 1
+      ? ` strain ${fmt(c.strain)} (${fmt(Math.ceil(c.strainCount!))} at ${c.strainNode!.process.via})`
+      : ''
+  console.log(`  [${c.worstTier}] ${c.size} steps${strain}: ${vias.join(' < ')}`)
 }
 if (process.argv.includes('--full'))
   for (const c of a.chains) {

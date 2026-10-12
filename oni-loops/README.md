@@ -2,6 +2,8 @@
 
 A small web app for [Oxygen Not Included](https://www.klei.com/games/oxygen-not-included): pick a resource you want more of, say what your colony has (DLCs, which asteroid, which geysers and how many, which critters, how many Duplicants), and get every way to get more of it: loops that bring it back to itself first (net-positive, then "top-up" loops above a floor you set), then every process that makes it, with each input rated renewable / finite on your asteroid / on another planetoid / space material / no source. Loops where the target only rides along a machine that mostly eats something else are marked side-stream and listed last.
 
+A plant is shown as a farm, with its irrigation and fertilizer in the chain, and the wild-planted version (a quarter of the growth, needing nothing) as an alternative on that step; the wild plant is a route of its own only where tending the plant needs something the colony cannot get. Routes that need more of something than a colony would build at the asked rate (fifty plants, thirty critters, ten buildings, or the geysers and terrain features found) are listed after the ones that do not, the less strained first.
+
 Live: https://isochronous.github.io/oni-loops/
 
 ## Layout

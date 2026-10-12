@@ -401,7 +401,39 @@ export function findChains(
       } else if (!named([existing.process, ...existing.alternatives], p))
         existing.alternatives.push(p)
     }
-    return [...groups.values()].sort(compareShapes)
+    return mergeWild([...groups.values()]).sort(compareShapes)
+  }
+
+  /**
+   * A wild-planted crop is the same plant growing at a quarter of the rate without its
+   * irrigation and fertilizer: a way to tend less, not another source. Taken as its own way it
+   * costs nothing and so wins every step below the root, and the farm never shows. Where the
+   * tended plant is as reachable it is the way, with the wild one as its alternative; the wild
+   * one stands alone only when tending needs something the colony cannot get.
+   */
+  function mergeWild(shapes: Shape[]): Shape[] {
+    const kept: Shape[] = []
+    for (const s of shapes) {
+      const p = s.process
+      const wild =
+        p.wildFactor !== undefined &&
+        p.inputs.length === 0 &&
+        (p.kind === 'crop' || p.kind === 'graze') &&
+        p.via.includes(' (wild)')
+      const tended = wild
+        ? shapes.find(
+            (t) =>
+              t.process.kind === p.kind &&
+              t.process.wildFactor === undefined &&
+              t.process.via === p.via.replace(' (wild)', '') &&
+              TIER_ORDER[t.tier] <= TIER_ORDER[s.tier],
+          )
+        : undefined
+      if (!tended) kept.push(s)
+      else if (![tended.process, ...tended.alternatives].some((x) => stepLabel(x) === stepLabel(p)))
+        tended.alternatives.push(p)
+    }
+    return kept
   }
 
   /** The best way to make `tag`, remembered; null when nothing the colony can run makes it. */
@@ -781,9 +813,11 @@ export function nodesOf(chain: Chain): Node[] {
  * Routes needing extreme in-world temperatures last of all, then routes a colony would not
  * build at the asked rate (over fifty plants, thirty critters, or ten buildings at one step);
  * otherwise easiest leaves first (a chain fed by geysers beats one needing a rocket), then chains the
- * colony's Duplicants can run at the asked rate, then shorter, with a loop (a chain that turns
- * some of its own product into more of it) counting as two steps shorter, then needing less
- * from outside.
+ * colony's Duplicants can run at the asked rate, then among strained routes the less strained
+ * (a wild plant grows at a quarter of the rate, so a route through wild plants needs four
+ * times as many and goes after one through a farm), then shorter, with a loop (a chain that
+ * turns some of its own product into more of it) counting as two steps shorter, then needing
+ * less from outside.
  */
 export function compareChains(a: Chain, b: Chain): number {
   return (
@@ -791,6 +825,7 @@ export function compareChains(a: Chain, b: Chain): number {
     Number(a.strain > 1) - Number(b.strain > 1) ||
     TIER_ORDER[a.worstTier] - TIER_ORDER[b.worstTier] ||
     Number(a.capped ?? false) - Number(b.capped ?? false) ||
+    strainBucket(a.strain) - strainBucket(b.strain) ||
     effectiveSize(a) - effectiveSize(b) ||
     cost(a) - cost(b)
   )

@@ -207,8 +207,10 @@ function list(parts: string[]): string {
 /** Another way to do the step, with what that way needs at this rate: "Lura Plant (wild) harvest (16 plants)". */
 function alternatives(n: Node): string {
   const names = (n.alternatives ?? []).map((p) => {
+    // A wild plant in place of a tended one takes the irrigation and fertilizer off the step.
+    const free = p.inputs.length === 0 && n.process.inputs.length > 0 ? ', needing nothing' : ''
     const count = countText(n, p)
-    return count ? `${stepLabel(p)} (${count})` : stepLabel(p)
+    return count ? `${stepLabel(p)} (${count}${free})` : stepLabel(p)
   })
   const shown = names.slice(0, 3)
   const more = names.length - shown.length
