@@ -396,6 +396,10 @@ function has(id: string) {
   max-height: 18rem;
   overflow-y: scroll;
   scrollbar-gutter: stable;
+  /* Chromium on Windows draws an overlay bar that only shows on hover unless the colours
+     are set, and then it paints a plain bar that stays: the muted text colour on the field. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) var(--inset);
   margin-top: 0.4rem;
   padding: 0.2rem 0.4rem 0.2rem 0.5rem;
   background: var(--inset);
