@@ -350,6 +350,9 @@ export function findChains(
         else if (stack.has(tag)) continue
         else {
           const shape = best(tag, depth + 1, (f.amount * need) / out.amount)
+          // An input whose every maker the player switched off is not an input from outside:
+          // the player said they do not have it, so a way that needs it is no way at all.
+          if (!shape && hiddenSource(tag)) continue
           // An input nothing here can make is only as good as what sources give directly;
           // crediting it with a route this chain cut would be circular. Past the depth limit
           // nothing was looked at, so nothing is credited.
@@ -363,6 +366,21 @@ export function findChains(
       inputs.push(chosen)
     }
     return assemble(p, output, ownTier, inputs, need)
+  }
+
+  /**
+   * The player has switched off whatever makes the tag (the plant, critter or machine, or a
+   * whole group), and the game offers no other way the colony could run: with Bonbon Trees
+   * off, Nectar is not something to bring in from outside, it is gone. A tag the game never
+   * makes at all is not this; that stays an outside input at its own tier.
+   */
+  function hiddenSource(tag: string): boolean {
+    if (!colony.excluded || colony.excluded.size === 0) return false
+    const makers = graph.byOutput.get(tag) ?? []
+    return (
+      makers.some((p) => isExcluded(p, colony, graph)) &&
+      makers.every((p) => isExcluded(p, colony, graph) || isAvailable(p, colony) !== null)
+    )
   }
 
   function betterInput(a: ShapeInput, b: ShapeInput): boolean {
