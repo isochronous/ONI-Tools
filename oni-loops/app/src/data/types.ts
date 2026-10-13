@@ -28,8 +28,24 @@ export interface Tuning {
   secondsPerCycle: number
   /** Kelvin past lowTemp/highTemp before the sim actually changes phase. */
   stateTransitionBufferK: number
-  /** A Mimika's pollination: growth bonus (0.25 = +25%), how long one lasts, and the pause between plants. Absent in older dumps. */
+  /** A Mimika's pollination: growth bonus (0.25 = +25%), how long one lasts, and the pause between plants. Absent in older dumps; newer ones carry it on the critter as `tends`. */
   pollination?: { growthBonus: number; effectSeconds: number; searchCooldownSeconds: number }
+  /**
+   * Farmer's Touch from a Farm Station: a Duplicant with the Farmer skill turns fertilizerKg
+   * of `material` into one `tool` (toolSeconds at the station) and applies it to a plant in a
+   * Farm room (workSeconds), which grows 1 + growthBonus times as fast for effectSeconds,
+   * longer by botanistBonus per point of the Duplicant's Botanist. Absent in older dumps.
+   */
+  farmTinker?: {
+    material: string
+    fertilizerKg: number
+    tool: string
+    growthBonus: number
+    effectSeconds: number
+    botanistBonus: number
+    toolSeconds: number
+    workSeconds: number
+  }
 }
 
 export interface ElementData {
@@ -189,6 +205,18 @@ export interface CritterData {
   }
   /** Cycles until it dies of old age. */
   lifespanCycles?: number
+  /**
+   * Tends crops (a Mimika pollinating, a Sweetle or Grubgrub tending): a visit gives the plant
+   * `effect`, 1 + growthBonus times its growth for effectSeconds, and the critter visits
+   * plantsPerCycle plants a cycle, going to `prefers` first. Absent in older dumps.
+   */
+  tends?: {
+    effect: string
+    growthBonus: number
+    effectSeconds: number
+    plantsPerCycle: number
+    prefers?: string[]
+  }
 }
 
 export interface PlantData {
@@ -196,11 +224,13 @@ export interface PlantData {
   name: string
   dlc: DlcRestriction
   crop?: { item: string; durationSeconds: number; count: number }
+  /** A tree whose trunk is harvested too (a Bonbon Tree's nectar): the branches' harvest, all of them together, as a second crop. Absent in older dumps. */
+  branchCrop?: { item: string; durationSeconds: number; count: number }
   irrigation?: { tag: string; rate: number }[]
   fertilizer?: { tag: string; rate: number }[]
   seed?: { item: string; productionType: string; count: number }
   skilledHarvestBonus?: Amount
-  /** A vine mother: the crop count is for all of this many vines on one plant. */
+  /** A vine mother or a tree: the crop count is for all of this many vines or branches on one plant. */
   branches?: number
   /** Wilts unless a Mimika, Sweetle, or Grubgrub tends it. */
   needsPollination?: boolean

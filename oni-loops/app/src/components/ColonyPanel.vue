@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { gameData } from '../data/load'
+import { gameData, label } from '../data/load'
 import type { PlantMutationData } from '../data/types'
-import { mutationFits } from '../model/graph'
+import { fmt, mutationFits } from '../model/graph'
 import { randomGeyserSlots } from '../model/tiers'
-import { useColonyStore } from '../stores/colony'
+import { DEFAULT_BOTANIST, useColonyStore } from '../stores/colony'
 import { looksLikeCoordinate, readSeed, type SeedWorld } from '../worldgen/seed'
 
 const store = useColonyStore()
@@ -77,6 +77,9 @@ const plants = computed(() => {
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
 })
 const mutatedCount = computed(() => Object.keys(store.mutations).length)
+/** Farmer's Touch, when the data set knows it. */
+const tinker = gameData.tuning.farmTinker
+const touchedCount = computed(() => plants.value.filter((p) => store.touchedOf(p.ids[0]!)).length)
 
 /** Adult critters under the chosen DLCs; babies are covered by their adult. */
 const critters = computed(() =>
@@ -260,7 +263,7 @@ function has(id: string) {
       </div>
 
       <details
-        v-if="gameData.plantMutations?.length"
+        v-if="gameData.plantMutations?.length || tinker"
         class="group fold"
         :open="showPlants"
         @toggle="showPlants = ($event.target as HTMLDetailsElement).open"
@@ -268,19 +271,66 @@ function has(id: string) {
         <summary class="fold-head">
           <span class="eyebrow">Plants</span>
           <span class="hint">
+            <template v-if="touchedCount">{{ touchedCount }} under Farmer's Touch</template>
+            <template v-else-if="tinker">no Farm Station</template>
+            <template v-if="touchedCount || tinker">, </template>
             <template v-if="mutatedCount">{{ mutatedCount }} with a mutated seed</template>
             <template v-else>plain seeds throughout</template>
           </span>
         </summary>
         <template v-if="showPlants">
-          <p class="hint">
+          <template v-if="tinker">
+            <div class="ranching">
+              <label class="check">
+                <input v-model="store.farming.farmStation" type="checkbox" />
+                Farmer's Touch from a Farm Station on every plant
+              </label>
+              <label class="drink">
+                <span>Botanist of the Duplicant applying it</span>
+                <input
+                  v-model.number="store.farming.botanist"
+                  type="number"
+                  class="num happiness"
+                  min="0"
+                  max="30"
+                  step="1"
+                  aria-label="Botanist attribute"
+                />
+              </label>
+            </div>
+            <p class="hint">
+              A Farm Station turns {{ fmt(tinker.fertilizerKg) }} kg of
+              {{ label(tinker.material) }} into one application of Farmer's Touch, which gives a
+              plant +{{ fmt(tinker.growthBonus * 100) }}% growth for
+              {{ fmt(tinker.effectSeconds / gameData.tuning.secondsPerCycle) }} cycle, longer by
+              {{ fmt(tinker.botanistBonus * 100) }}% per point of the Duplicant's Botanist; the
+              Farmer skill the station needs brings {{ DEFAULT_BOTANIST }}. The chains source the
+              {{ label(tinker.material) }} like any other input, and the farm needs fewer plants.
+              The tick before a plant sets it apart from the farms' default.
+            </p>
+          </template>
+          <p v-if="gameData.plantMutations?.length" class="hint">
             A mutated seed changes the plant's yield, growth time, and water or fertilizer use, and
             needs radiation to stay viable. Pick the mutation you are growing, if any.
           </p>
           <div class="list">
             <div v-for="p in plants" :key="p.name" class="plant">
-              <span>{{ p.name }}</span>
+              <label v-if="tinker" class="check">
+                <input
+                  type="checkbox"
+                  :checked="store.touchedOf(p.ids[0]!)"
+                  :aria-label="`${p.name} under Farmer's Touch`"
+                  @change="
+                    p.ids.forEach((id) =>
+                      store.setTouched(id, ($event.target as HTMLInputElement).checked),
+                    )
+                  "
+                />
+                {{ p.name }}
+              </label>
+              <span v-else>{{ p.name }}</span>
               <select
+                v-if="p.mutations.length"
                 :value="store.mutations[p.ids[0]!] ?? ''"
                 :aria-label="`${p.name} mutation`"
                 @change="

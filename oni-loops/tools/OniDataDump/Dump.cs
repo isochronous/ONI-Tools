@@ -47,12 +47,14 @@ namespace OniDataDump
 					// The sim only changes phase this many kelvin past lowTemp / highTemp.
 					["stateTransitionBufferK"] = SimMessages.STATE_TRANSITION_TEMPERATURE_BUFER,
 					// A Mimika's pollination: growth bonus, how long it lasts, and the pause between plants.
+					// Kept for the app's older-dump path; every crop-tending critter now carries "tends".
 					["pollination"] = new JObject
 					{
 						["growthBonus"] = ButterflyTuning.CROP_TENDED_MULTIPLIER_EFFECT,
 						["effectSeconds"] = ButterflyTuning.CROP_TENDED_MULTIPLIER_DURATION,
 						["searchCooldownSeconds"] = ButterflyTuning.SEARCH_COOLDOWN,
 					},
+					["farmTinker"] = FarmTinker(),
 				},
 				["dlcs"] = new JArray(DlcIds().Select(id => new JObject { ["id"] = id, ["name"] = DlcName(id) })),
 				["names"] = Names(),
@@ -702,6 +704,12 @@ namespace OniDataDump
 						["requiredDiet"] = wellFed.requiredDiet != null && wellFed.requiredDiet != Tag.Invalid ? wellFed.requiredDiet.ToString() : null,
 					};
 				}
+				// Crop tending (a Mimika pollinating, a Sweetle or Grubgrub tending): each visit gives
+				// the plant an effect that multiplies its growth for a while, then the critter waits
+				// before looking for the next plant.
+				JObject tends = Tends(prefab);
+				if (tends != null)
+					o["tends"] = tends;
 				arr.Add(o);
 			}
 			return arr;
@@ -720,6 +728,120 @@ namespace OniDataDump
 				return 0f;
 			string deltaId = amount.deltaAttribute.Id;
 			return effect.SelfModifiers.Where(m => m.AttributeId == deltaId && !m.IsMultiplier).Sum(m => m.Value);
+		}
+
+		/// <summary>
+		/// How much faster a plant grows under an effect: the multiplier the effect puts on the
+		/// Maturity delta (0.25 = +25%), or 0 when the effect is unknown or does not touch it.
+		/// </summary>
+		private static float GrowthBonus(Klei.AI.Effect effect)
+		{
+			if (effect == null)
+				return 0f;
+			string deltaId = Db.Get().Amounts.Maturity.deltaAttribute.Id;
+			return effect.SelfModifiers.Where(m => m.AttributeId == deltaId && m.IsMultiplier).Sum(m => m.Value);
+		}
+
+		/// <summary>
+		/// A critter's crop tending. A Mimika (PollinateMonitor) gives ButterflyPollinated and
+		/// waits SEARCH_COOLDOWN before the next plant. A Sweetle or Grubgrub carries a
+		/// CropTendingMonitor (how many plants a cycle) and, in its chore table rather than among
+		/// its defs, the CropTendingStates with the effect it gives and the plants it goes to
+		/// first (interests: the Spindly Grubfruit Plant); babies have the monitor but not the
+		/// chore, so they tend nothing.
+		/// </summary>
+		private static JObject Tends(GameObject prefab)
+		{
+			if (prefab.GetDef<PollinateMonitor.Def>() != null)
+				return Tends(ButterflyTuning.POLLINATED_EFFECT, 600f / ButterflyTuning.SEARCH_COOLDOWN, null);
+			CropTendingMonitor.Def monitor = prefab.GetDef<CropTendingMonitor.Def>();
+			ChoreTable table = prefab.GetComponent<ChoreConsumer>()?.choreTable;
+			if (monitor == null || table == null)
+				return null;
+			var entries = AccessTools.Field(typeof(ChoreTable), "entries")?.GetValue(table) as ChoreTable.Entry[];
+			CropTendingStates.Def states = entries?.Select(e => e.stateMachineDef).OfType<CropTendingStates.Def>().FirstOrDefault();
+			if (states == null)
+				return null;
+			var prefers = states.interests.OrderByDescending(kv => kv.Value).Select(kv => kv.Key.ToString()).ToList();
+			return Tends(states.effectId, monitor.numCropsTendedPerCycle, prefers);
+		}
+
+		private static JObject Tends(string effectId, float plantsPerCycle, List<string> prefers)
+		{
+			Klei.AI.Effect effect = Db.Get().effects.TryGet(effectId);
+			if (effect == null)
+				return null;
+			var o = new JObject
+			{
+				["effect"] = effectId,
+				["growthBonus"] = GrowthBonus(effect),
+				["effectSeconds"] = effect.duration,
+				["plantsPerCycle"] = plantsPerCycle,
+			};
+			if (prefers != null && prefers.Count > 0)
+				o["prefers"] = new JArray(prefers);
+			return o;
+		}
+
+		/// <summary>
+		/// Farmer's Touch from a Farm Station: a Duplicant with the CanFarmTinker perk turns
+		/// massPerTinker kg of the station's material (Fertilizer) into one tool (the
+		/// "Micronutrient Fertilizer" item) and applies it to a plant in a Farm room, which gets
+		/// the FarmTinker effect: its Maturity delta multiplied by 1 + growthBonus for the effect's
+		/// duration, lengthened by botanistBonus per point of the Duplicant's Botanist attribute.
+		/// The station's and the plant's numbers are read from their components, the effect's
+		/// from the Db, where the game's effects table put it.
+		/// </summary>
+		/// <summary>
+		/// The station's tool time is set by its config's prefabInitFn (15 s for the Farm Station),
+		/// which runs on each instance, not on the template; the template still carries the
+		/// component default (160 s). Run the callback on a throwaway inactive clone and read it there.
+		/// </summary>
+		private static float ToolSeconds(TinkerStation station)
+		{
+			try
+			{
+				GameObject clone = UnityEngine.Object.Instantiate(station.gameObject);
+				clone.SetActive(false);
+				// prefabInitFn is an event, and Instantiate does not copy delegates, so the callback
+				// is read from the template's KPrefabID (as KPrefabID.CopyInitFunctions does) and run
+				// on the clone.
+				KPrefabID template = station.GetComponent<KPrefabID>();
+				Delegate init = template != null ? AccessTools.Field(typeof(KPrefabID), "prefabInitFn")?.GetValue(template) as Delegate : null;
+				init?.DynamicInvoke(clone);
+				float seconds = clone.GetComponent<TinkerStation>().toolProductionTime;
+				UnityEngine.Object.DestroyImmediate(clone);
+				return seconds;
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning("[OniDataDump] cannot run the tinker station's prefab init: " + e.Message);
+				return station.toolProductionTime;
+			}
+		}
+
+		private static JObject FarmTinker()
+		{
+			TinkerStation station = Assets.GetBuildingDef(FarmStationConfig.ID)?.BuildingComplete?.GetComponent<TinkerStation>();
+			if (station == null)
+				return null;
+			Tinkerable plant = Assets.GetPrefabsWithComponent<Tinkerable>()
+				.Select(p => p.GetComponent<Tinkerable>())
+				.FirstOrDefault(t => t.tinkerMaterialTag == station.outputPrefab);
+			if (plant == null)
+				return null;
+			Klei.AI.Effect effect = Db.Get().effects.TryGet(plant.addedEffect);
+			return new JObject
+			{
+				["material"] = station.inputMaterial.ToString(),
+				["fertilizerKg"] = station.massPerTinker * plant.tinkerMaterialAmount,
+				["tool"] = station.outputPrefab.ToString(),
+				["growthBonus"] = GrowthBonus(effect),
+				["effectSeconds"] = effect?.duration ?? 0f,
+				["botanistBonus"] = plant.effectMultiplier,
+				["toolSeconds"] = ToolSeconds(station),
+				["workSeconds"] = plant.GetWorkTime(),
+			};
 		}
 
 		/// <summary>
@@ -770,9 +892,21 @@ namespace OniDataDump
 		private static JArray Plants()
 		{
 			var arr = new JArray();
+			// A tree's branches are prefabs of their own (ForestTreeBranch, SpaceTreeBranch) that
+			// grow and are harvested one by one; they are not plants a player places, so they are
+			// folded into their trunk below and skipped here.
+			var branchPrefabs = new HashSet<string>();
+			foreach (KPrefabID id in Assets.Prefabs)
+			{
+				PlantBranchGrower.Def grower = id.gameObject.GetDef<PlantBranchGrower.Def>();
+				if (grower?.BRANCH_PREFAB_NAME != null)
+					branchPrefabs.Add(grower.BRANCH_PREFAB_NAME);
+			}
 			foreach (GameObject prefab in Assets.GetPrefabsWithComponent<Growing>())
 			{
 				KPrefabID id = prefab.GetComponent<KPrefabID>();
+				if (branchPrefabs.Contains(id.PrefabTag.ToString()))
+					continue;
 				var o = new JObject
 				{
 					["id"] = id.PrefabTag.ToString(),
@@ -782,6 +916,27 @@ namespace OniDataDump
 				Crop crop = prefab.GetComponent<Crop>();
 				if (crop != null)
 					o["crop"] = new JObject { ["item"] = crop.cropVal.cropId, ["durationSeconds"] = crop.cropVal.cropDuration, ["count"] = crop.cropVal.numProduced };
+				// A trunk that grows branches: each branch bears its own crop, and up to
+				// MAX_BRANCH_COUNT of them grow at once, so the tree's harvest is the branch's times
+				// that. An Arbor Tree's trunk is not harvestable itself (its Crop is the template
+				// the branches copy), so the branch harvest is the tree's crop; a Bonbon Tree's trunk
+				// gives nectar and its branches wood, two harvests on one plant.
+				PlantBranchGrower.Def branches = prefab.GetDef<PlantBranchGrower.Def>();
+				GameObject branch = branches?.BRANCH_PREFAB_NAME != null ? Assets.GetPrefab(branches.BRANCH_PREFAB_NAME) : null;
+				Crop branchCrop = branch != null ? branch.GetComponent<Crop>() : null;
+				if (branchCrop != null)
+				{
+					int count = branches.MAX_BRANCH_COUNT >= 0 && branches.BRANCH_OFFSETS != null ? Math.Min(branches.MAX_BRANCH_COUNT, branches.BRANCH_OFFSETS.Length) : branches.MAX_BRANCH_COUNT;
+					var harvest = new JObject { ["item"] = branchCrop.cropVal.cropId, ["durationSeconds"] = branchCrop.cropVal.cropDuration, ["count"] = branchCrop.cropVal.numProduced * count };
+					o["branches"] = count;
+					// The Arbor Tree's trunk carries the same WoodLog crop its branches copy and is not
+					// harvested itself; the Bonbon Tree's trunk has a crop of its own (nectar). Its
+					// Harvestable is added per instance, so the crops are told apart by their item.
+					if (crop != null && crop.cropVal.cropId != branchCrop.cropVal.cropId)
+						o["branchCrop"] = harvest;
+					else
+						o["crop"] = harvest;
+				}
 				IrrigationMonitor.Def irrigation = prefab.GetDef<IrrigationMonitor.Def>();
 				if (irrigation?.consumedElements != null)
 					o["irrigation"] = new JArray(irrigation.consumedElements.Select(c => new JObject { ["tag"] = c.tag.ToString(), ["rate"] = c.massConsumptionRate }));

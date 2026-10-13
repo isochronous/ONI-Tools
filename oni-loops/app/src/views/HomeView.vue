@@ -31,6 +31,10 @@ const graphOptions = computed<PlainGraphOptions>(() => ({
       : { tag: store.ranching.drink, kgPerCycle: FOUNTAIN_KG_PER_CYCLE },
   defaultHappiness: store.defaultHappiness,
   mutations: { ...store.mutations },
+  farmTinker: {
+    applied: Object.fromEntries(gameData.plants.map((p) => [p.id, store.touchedOf(p.id)])),
+    botanist: store.farming.botanist,
+  },
 }))
 const graph = computed(() => {
   const o = graphOptions.value
@@ -38,6 +42,10 @@ const graph = computed(() => {
     happiness: (id) => o.happiness[id] ?? o.defaultHappiness,
     drink: o.drink,
     mutation: (id) => o.mutations[id],
+    farmTinker: {
+      applied: (id) => o.farmTinker.applied[id] ?? false,
+      botanist: o.farmTinker.botanist,
+    },
   })
 })
 

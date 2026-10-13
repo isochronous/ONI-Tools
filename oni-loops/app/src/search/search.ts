@@ -17,6 +17,8 @@ export interface PlainGraphOptions {
   defaultHappiness: number
   drink?: { tag: string; kgPerCycle: number }
   mutations: Record<string, string>
+  /** Farmer's Touch by plant id (every plant listed), and the Botanist of the Duplicant applying it. */
+  farmTinker: { applied: Record<string, boolean>; botanist: number }
 }
 
 /** A colony with its sets and maps as arrays, for the message. */

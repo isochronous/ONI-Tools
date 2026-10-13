@@ -33,10 +33,28 @@ interface Saved {
   ranching?: Ranching
   /** The mutation each plant's seeds carry, by plant id, where one is chosen. */
   mutations: Record<string, string>
+  /** What the farms have: a Farm Station giving Farmer's Touch, and who applies it. */
+  farming?: Farming
+  /** Farmer's Touch by plant id, where the player set a plant apart from the farms' default. */
+  touched?: Record<string, boolean>
   /** The map seed last read, with what its worlds place, and which worlds the counts follow. */
   seed?: SeedResult
   seedWorlds?: string[]
 }
+
+/** What the colony's farms provide: whether a Farm Station keeps every plant under Farmer's Touch. */
+export interface Farming {
+  /** Farmer's Touch on every plant, each overridable. */
+  farmStation: boolean
+  /** The Botanist attribute of the Duplicant applying it, which lengthens each application. */
+  botanist: number
+}
+
+/**
+ * Botanist of a Duplicant who can work a Farm Station: the Farmer skill it needs, and the
+ * Junior Farmer skill before it, each add 2 (ROLES.ATTRIBUTE_BONUS_FIRST and _SECOND).
+ */
+export const DEFAULT_BOTANIST = 4
 
 /** What the colony's stables provide, which sets every tame critter's happiness. */
 export interface Ranching {
@@ -101,6 +119,12 @@ export const useColonyStore = defineStore('colony', () => {
   const happiness = ref<Record<string, number>>({ ...(saved?.happiness ?? {}) })
   const ranching = ref<Ranching>({ groomed: true, drink: 'none', condo: false, ...saved?.ranching })
   const mutations = ref<Record<string, string>>({ ...(saved?.mutations ?? {}) })
+  const farming = ref<Farming>({
+    farmStation: false,
+    botanist: DEFAULT_BOTANIST,
+    ...saved?.farming,
+  })
+  const touched = ref<Record<string, boolean>>({ ...saved?.touched })
   /** The seed read last, if any, and the worlds whose geysers the counts add up. */
   const seed = ref<SeedResult | null>(saved?.seed ?? null)
   const seedWorlds = ref<string[]>(saved?.seedWorlds ?? [])
@@ -138,6 +162,10 @@ export const useColonyStore = defineStore('colony', () => {
   function happinessOf(id: string): number {
     return happiness.value[id] ?? defaultHappiness.value
   }
+  /** Whether a plant gets Farmer's Touch: its own setting if the player made one, else the farms' default. */
+  function touchedOf(id: string): boolean {
+    return touched.value[id] ?? farming.value.farmStation
+  }
 
   const colony = computed<Colony>(() => ({
     dlcs: dlcs.value,
@@ -164,6 +192,8 @@ export const useColonyStore = defineStore('colony', () => {
         happiness: happiness.value,
         ranching: ranching.value,
         mutations: mutations.value,
+        farming: farming.value,
+        touched: touched.value,
         seed: seed.value ?? undefined,
         seedWorlds: seedWorlds.value,
       }
@@ -252,6 +282,14 @@ export const useColonyStore = defineStore('colony', () => {
     mutations.value = next
   }
 
+  /** A plant's own Farmer's Touch; set to the farms' default it follows the farms again. */
+  function setTouched(id: string, on: boolean) {
+    const next = { ...touched.value }
+    if (on === farming.value.farmStation) delete next[id]
+    else next[id] = on
+    touched.value = next
+  }
+
   /** A critter's own happiness; set to the stables' default it follows the stables again. */
   function setHappiness(id: string, value: number) {
     const n = Math.max(-10, Math.min(10, Number(value) || 0))
@@ -297,7 +335,19 @@ export const useColonyStore = defineStore('colony', () => {
   }
 
   watch(
-    [colony, hidden, demandKg, demandItems, happiness, ranching, mutations, seed, seedWorlds],
+    [
+      colony,
+      hidden,
+      demandKg,
+      demandItems,
+      happiness,
+      ranching,
+      mutations,
+      farming,
+      touched,
+      seed,
+      seedWorlds,
+    ],
     save,
     { deep: true },
   )
@@ -320,6 +370,9 @@ export const useColonyStore = defineStore('colony', () => {
     defaultHappiness,
     happinessOf,
     mutations,
+    farming,
+    touched,
+    touchedOf,
     seed,
     seedWorlds,
     colony,
@@ -334,6 +387,7 @@ export const useColonyStore = defineStore('colony', () => {
     toggleHidden,
     setHappiness,
     setMutation,
+    setTouched,
     setHidden,
     clearHidden,
     setRule,

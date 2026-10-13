@@ -40,8 +40,8 @@ export interface Flow {
   anyOf?: string[]
   /** What the alternatives have in common, for display ("compostable item"); kinds otherwise. */
   anyOfName?: string
-  /** For a plant's input: what the plant does with it, so a step can read "used to irrigate". */
-  role?: 'irrigation' | 'fertilizer' | 'prey'
+  /** For a plant's input: what the plant does with it, so a step can read "used to irrigate"; tending is Farmer's Touch from a Farm Station. */
+  role?: 'irrigation' | 'fertilizer' | 'prey' | 'tending'
 }
 
 export interface Needs {
@@ -212,6 +212,8 @@ export interface GraphOptions {
   drink?: { tag: string; kgPerCycle: number }
   /** The mutation a plant's seeds carry, by plant id; undefined for the plain plant. */
   mutation?: (plantId: string) => string | undefined
+  /** Farmer's Touch from a Farm Station: which plants get it, by plant id, and the Botanist attribute of the Duplicant applying it. */
+  farmTinker?: { applied: (plantId: string) => boolean; botanist: number }
 }
 
 /** True when a mutation can occur on a plant (the game rolls only among these). */
@@ -812,7 +814,45 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
 
   // Plants.
   const mutations = new Map((d.plantMutations ?? []).map((m) => [m.id, m]))
-  for (const p of d.plants) {
+  // Critters that tend crops (a Mimika pollinating, a Sweetle or Grubgrub tending), each with
+  // its growth bonus, how long a visit lasts, and how many plants a cycle it gets round. An
+  // older dump has only the Mimika's numbers, under tuning.
+  const tenders = d.critters
+    .filter((c) => c.tends)
+    .map((c) => ({ id: c.id, name: c.name, ...c.tends! }))
+    .sort((a, b) => b.growthBonus - a.growthBonus)
+  if (!tenders.length && d.tuning.pollination) {
+    const m = d.tuning.pollination
+    tenders.push({
+      id: 'Butterfly',
+      name: d.critters.find((c) => c.id === 'Butterfly')?.name ?? 'Mimika',
+      effect: 'ButterflyPollinated',
+      growthBonus: m.growthBonus,
+      effectSeconds: m.effectSeconds,
+      plantsPerCycle: d.tuning.secondsPerCycle / m.searchCooldownSeconds,
+    })
+  }
+  // A tree with harvestable branches besides its trunk (a Bonbon Tree: nectar from the trunk,
+  // wood from the branches) is two harvests on one plant; the branch harvest gets a plant entry
+  // of its own here, under the tree's name, with the tree's inputs and nothing else of its own.
+  const cropPlants: (typeof d.plants)[number][] = d.plants.flatMap((p) =>
+    p.branchCrop
+      ? [
+          p,
+          {
+            ...p,
+            name: `${p.name} branches`,
+            crop: p.branchCrop,
+            branchCrop: undefined,
+            seed: undefined,
+            skilledHarvestBonus: undefined,
+            grazing: undefined,
+            prey: undefined,
+          },
+        ]
+      : [p],
+  )
+  for (const p of cropPlants) {
     if (p.crop) {
       // A mutated seed scales the plant's yield, growth time, and water or fertilizer use,
       // may add a bonus crop, and needs radiation to stay viable.
@@ -823,12 +863,32 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
       const growthScale = 1 + (mutated?.growth ?? 0)
       const usageScale = 1 + (mutated?.usage ?? 0)
       const duration = p.crop.durationSeconds * growthScale
-      const cycles = duration / d.tuning.secondsPerCycle
+      // Farmer's Touch from a Farm Station: a Duplicant turns Fertilizer into a tool and applies
+      // it to the plant, which grows 1 + growthBonus times as fast while the effect lasts (the
+      // mutation scales the growth needed, the touch the rate, so the two multiply). Kept up,
+      // each harvest costs its share of the applications; the plant's own irrigation and
+      // fertilizer run by the second, so a quicker harvest takes less of them. A Farm room is
+      // needed, so a wild plant, and a grazed one in a stable, go without.
+      const tinker = d.tuning.farmTinker
+      const touched = tinker && options.farmTinker?.applied(p.id) ? tinker : undefined
+      const touchSeconds = tinker
+        ? tinker.effectSeconds * (1 + tinker.botanistBonus * (options.farmTinker?.botanist ?? 0))
+        : 0
+      const touchCycles = touchSeconds / d.tuning.secondsPerCycle
+      const tended = touched ? duration / (1 + touched.growthBonus) : duration
+      const cycles = tended / d.tuning.secondsPerCycle
       const inputs: Flow[] = []
       for (const f of p.irrigation ?? [])
-        inputs.push({ tag: f.tag, amount: f.rate * duration * usageScale, role: 'irrigation' })
+        inputs.push({ tag: f.tag, amount: f.rate * tended * usageScale, role: 'irrigation' })
       for (const f of p.fertilizer ?? [])
-        inputs.push({ tag: f.tag, amount: f.rate * duration * usageScale, role: 'fertilizer' })
+        inputs.push({ tag: f.tag, amount: f.rate * tended * usageScale, role: 'fertilizer' })
+      if (touched) {
+        // A plant fertilized with the station's own material takes more of the same input.
+        const kg = (touched.fertilizerKg * tended) / touchSeconds
+        const own = inputs.find((f) => f.tag === touched.material)
+        if (own) own.amount += kg
+        else inputs.push({ tag: touched.material, amount: kg, role: 'tending' })
+      }
       // A bonus crop of the plant's own kind (Bonus Lice on a Mealwood) is simply more of it.
       const bonusCrop = mutated?.bonusCrop
       const extraOwn = bonusCrop && bonusCrop.tag === p.crop.item ? bonusCrop.amount : 0
@@ -849,18 +909,43 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
           role: 'prey',
         })
       const extras: string[] = []
-      if (p.branches) extras.push(`across up to ${p.branches} vines on one plant`)
+      if (p.branches) extras.push(`from up to ${p.branches} branches or vines of one plant`)
       if (p.needsPollination) extras.push('needs pollination (Mimika, Sweetle, or Grubgrub)')
       if (mutated?.minRadiation) extras.push(`needs ${fmt(mutated.minRadiation)} rads of radiation`)
       if (mutated?.minLux) extras.push(`needs ${fmt(mutated.minLux)} lux of light`)
-      // A Mimika's visit speeds growth for a while; one keeps a handful of plants going.
-      const pollination = d.tuning.pollination
-      const boost =
-        pollination && p.crop.item !== 'Butterfly'
-          ? [
-              `+${fmt(pollination.growthBonus * 100)}% growth while a Mimika pollinates it (one Mimika keeps up to ${Math.floor(pollination.effectSeconds / pollination.searchCooldownSeconds)} plants going)`,
-            ]
-          : []
+      // A tending critter's visit speeds growth for a while; one keeps a handful of plants
+      // going. The Mimika leaves the plant it comes from alone.
+      const boost = tenders
+        .filter((t) => t.id !== 'Butterfly' || p.crop!.item !== 'Butterfly')
+        .map((t) => {
+          const plants = Math.floor(t.effectSeconds / (d.tuning.secondsPerCycle / t.plantsPerCycle))
+          const verb = t.id === 'Butterfly' ? 'pollinates' : 'tends'
+          const first = !t.prefers?.length
+            ? ''
+            : t.prefers.includes(p.id)
+              ? ', this plant first'
+              : `, ${t.prefers.map((id) => 'a ' + label(id)).join(' or ')} first`
+          return `+${fmt(t.growthBonus * 100)}% growth while a ${t.name} ${verb} it (one ${t.name} keeps up to ${plants} plants going${first})`
+        })
+      // The trade-off of Farmer's Touch: what it costs a plant each cycle against what it adds.
+      const touch: string[] = []
+      if (tinker && touchSeconds > 0) {
+        const extra = (count * tinker.growthBonus) / (duration / d.tuning.secondsPerCycle)
+        const cost = `${fmt(tinker.fertilizerKg)} kg ${label(tinker.material)} every ${fmt(touchCycles)} cycles per plant at Botanist ${fmt(options.farmTinker?.botanist ?? 0)}`
+        const gain = `${fmt(extra)}${elementIds.has(p.crop.item) ? ' kg' : ''} more ${label(p.crop.item)} a cycle from each plant`
+        touch.push(
+          touched
+            ? `under Farmer's Touch from a Farm Station: ${cost}, for +${fmt(tinker.growthBonus * 100)}% growth and ${gain}`
+            : `Farmer's Touch from a Farm Station adds +${fmt(tinker.growthBonus * 100)}% growth for ${cost}: ${gain}`,
+        )
+      }
+      // The farm's own conditions: the wild plant and the grazed one share the rest.
+      const farmExtras = touched
+        ? [
+            ...extras,
+            `kept under Farmer's Touch from a Farm Station: a Duplicant with the Farmer skill makes each ${fmt(touched.fertilizerKg)} kg of ${label(touched.material)} into ${label(touched.tool)} (${fmt(touched.toolSeconds)} s) and applies it (${fmt(touched.workSeconds)} s)`,
+          ]
+        : extras
       add({
         kind: 'crop',
         via: p.name + mutationName,
@@ -868,13 +953,18 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         inputs,
         outputs: [{ tag: p.crop.item, amount: count }, ...bonus],
         dlc: p.dlc,
-        needs: { plant: p.id, extras: extras.length ? extras : undefined },
+        needs: { plant: p.id, extras: farmExtras.length ? farmExtras : undefined },
         throughput: { runsPerCycle: 1 / cycles, instance: 'plant' },
-        notes: [`every ${fmt(cycles)} cycles when tended`, ...boost],
-        seconds: duration,
+        notes: [
+          `every ${fmt(cycles)} cycles when tended${touched ? " under Farmer's Touch" : ''}`,
+          ...touch,
+          ...boost,
+        ],
+        seconds: tended,
       })
       // Wild (pip-planted) plants need no irrigation or fertilizer and grow at a fraction of the rate.
       const wild = d.tuning.wildPlantGrowthModifier
+      const wildCycles = duration / d.tuning.secondsPerCycle / wild
       add({
         kind: 'crop',
         via: `${p.name} (wild)` + mutationName,
@@ -884,8 +974,8 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         dlc: p.dlc,
         needs: { plant: p.id, extras: extras.length ? extras : undefined },
         wildFactor: wild,
-        throughput: { runsPerCycle: wild / cycles, instance: 'plant' },
-        notes: [`every ${fmt(cycles / wild)} cycles when wild-planted; needs nothing`, ...boost],
+        throughput: { runsPerCycle: 1 / wildCycles, instance: 'plant' },
+        notes: [`every ${fmt(wildCycles)} cycles when wild-planted; needs nothing`, ...boost],
         seconds: duration / wild,
       })
       // A critter that eats the plant itself (a Drecko at a Mealwood, a Glo Squid at a Tublia)
@@ -956,7 +1046,9 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         })
       }
     }
-    if (p.seed && p.seed.count > 0) {
+    // A seed that is the crop (Sleet Wheat Grain, Nosh Bean: productionType Crop) is already the
+    // harvest above; listing it again would be a free, input-less second source of the same thing.
+    if (p.seed && p.seed.count > 0 && p.seed.productionType !== 'Crop') {
       add({
         kind: 'seed',
         via: p.name,

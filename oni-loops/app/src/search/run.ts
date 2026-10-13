@@ -22,6 +22,10 @@ function graphFor(request: SearchRequest): Graph {
       happiness: (id) => o.happiness[id] ?? o.defaultHappiness,
       drink: o.drink,
       mutation: (id) => o.mutations[id],
+      farmTinker: {
+        applied: (id) => o.farmTinker.applied[id] ?? false,
+        botanist: o.farmTinker.botanist,
+      },
     })
     graphKey = key
     tiers = null

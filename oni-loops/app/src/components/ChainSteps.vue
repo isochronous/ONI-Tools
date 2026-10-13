@@ -301,6 +301,7 @@ function stepText(n: Node): string {
   const verbs: string[] = []
   if (roles.has('irrigation')) verbs.push('irrigate')
   if (roles.has('fertilizer')) verbs.push('fertilize')
+  if (roles.has('tending')) verbs.push('tend')
   const use = verbs.length ? `used to ${verbs.join(' and ')}` : ''
   if (roles.has('prey'))
     return use ? `${use}, and fed to, ${n.process.via}` : `fed to ${n.process.via}`
