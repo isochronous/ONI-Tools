@@ -27,6 +27,7 @@ const KIND_TITLES: Record<ProcessKind, string> = {
   diet: 'Excreted by critters',
   drop: 'Dropped when a critter dies',
   egg: 'Laid by critters',
+  beckon: 'Beckoned down from space by Moos',
   grow: 'Shed when a critter grows up',
   shear: 'Sheared from critters',
   milk: 'Milked from critters',

@@ -210,6 +210,16 @@ export interface CritterData {
    * `effect`, 1 + growthBonus times its growth for effectSeconds, and the critter visits
    * plantsPerCycle plants a cycle, going to `prefers` first. Absent in older dumps.
    */
+  /**
+   * A Moo's way of multiplying: well fed, its beckoning meter fills over this many cycles,
+   * and it calls a Moo Comet down that leaves one of these critters (weights sum to 1).
+   * Absent in older dumps.
+   */
+  beckons?: {
+    cyclesPerBeckon: number
+    caloriesPerCycle: number
+    spawns: { critter: string; weight: number }[]
+  }
   tends?: {
     effect: string
     growthBonus: number
@@ -232,6 +242,22 @@ export interface PlantData {
   skilledHarvestBonus?: Amount
   /** A vine mother or a tree: the crop count is for all of this many vines or branches on one plant. */
   branches?: number
+  /**
+   * A gas the living plant takes from the air around it (a Dasha Saltvine's chlorine, a
+   * Hydrocactus's oxygen), kg/s while domesticated and while wild. Absent in older dumps.
+   */
+  consumes?: { tag: string; rate: number; wildRate: number }[]
+  /**
+   * A plant that converts one element into another continuously (the Oxyfern: carbon dioxide
+   * to oxygen), kg/s while domesticated; wild it runs at wildFactor of that. The output
+   * multiplier is the converter's, recorded but not applied. Absent in older dumps.
+   */
+  converts?: {
+    inputs: { tag: string; rate: number }[]
+    outputs: { tag: string; rate: number }[]
+    outputMultiplier?: number
+    wildFactor: number
+  }
   /** Wilts unless a Mimika, Sweetle, or Grubgrub tends it. */
   needsPollination?: boolean
   /** Critter prefab ids a flytrap plant eats, one per harvest, when it is one. */

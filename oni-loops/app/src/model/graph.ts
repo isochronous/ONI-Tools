@@ -15,6 +15,7 @@ export type ProcessKind =
   | 'diet' // critter eats one thing and excretes another
   | 'drop' // critter death drop
   | 'egg' // critter lays an egg
+  | 'beckon' // a Moo calls a Moo Comet down from space, which leaves a new Moo
   | 'grow' // baby critter drops something on growing up
   | 'shear' // critter sheds an item when groomed/sheared
   | 'milk' // critter is milked at a Milking Station
@@ -41,7 +42,7 @@ export interface Flow {
   /** What the alternatives have in common, for display ("compostable item"); kinds otherwise. */
   anyOfName?: string
   /** For a plant's input: what the plant does with it, so a step can read "used to irrigate"; tending is Farmer's Touch from a Farm Station. */
-  role?: 'irrigation' | 'fertilizer' | 'prey' | 'tending'
+  role?: 'irrigation' | 'fertilizer' | 'prey' | 'tending' | 'atmosphere'
 }
 
 export interface Needs {
@@ -159,6 +160,8 @@ export function stepLabel(p: Process): string {
       return p.viaId === 'RotPile' ? p.via + ' decomposes' : p.via + ' spoils'
     case 'egg':
       return p.via + ' lays an egg'
+    case 'beckon':
+      return p.via + ' beckons a Moo Comet'
     case 'hatch':
       return p.via + ' hatches and grows up'
     case 'grow':
@@ -669,6 +672,46 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         wildFactor: d.tuning.wildCritterGrowthModifier,
       })
     }
+    // A Moo lays no egg: kept well fed, its beckoning meter fills over so many cycles, then
+    // it calls a Moo Comet down from space, which leaves a new Moo (a Husky Moo now and
+    // then). What it eats in that time is the cost, as with an egg; a wild Moo beckons too,
+    // but a wild one is not fed, so this is the tame rate.
+    if (c.beckons && c.beckons.spawns.length) {
+      const diet = (c.diet ?? [])
+        .filter((x) => x.caloriesPerKg > 0 && x.eats.length)
+        .sort((a, b) => b.eats.length - a.eats.length)[0]
+      const eats =
+        diet && c.caloriesBurnedPerCycle
+          ? (c.caloriesBurnedPerCycle * c.beckons.cyclesPerBeckon) / diet.caloriesPerKg
+          : 0
+      const spawns = c.beckons.spawns.filter((x) => d.critters.some((k) => k.id === x.critter))
+      const main = spawns.reduce((a, b) => (b.weight > a.weight ? b : a), spawns[0]!)
+      add({
+        kind: 'beckon',
+        via: c.name,
+        viaId: c.id,
+        inputs:
+          eats > 0 && diet
+            ? [
+                {
+                  tag: diet.eats[0]!,
+                  amount: eats,
+                  anyOf: diet.eats.length > 1 ? diet.eats : undefined,
+                },
+              ]
+            : [],
+        outputs: spawns.map((x) => ({ tag: x.critter, amount: x.weight })),
+        dlc: c.dlc,
+        needs: { critter: c.id },
+        throughput: { runsPerCycle: 1 / c.beckons.cyclesPerBeckon, instance: 'critter' },
+        primaryOutput: main.critter,
+        notes: [
+          `one Moo Comet every ${fmt(c.beckons.cyclesPerBeckon)} cycles while well fed, carrying ${spawns
+            .map((x) => `a ${label(x.critter)} ${fmt(x.weight * 100)}% of the time`)
+            .join(' or ')}`,
+        ],
+      })
+    }
     if (c.egg && !c.adult && d.names[c.egg]) {
       // The egg becomes the adult: one critter per egg, after incubation and growing up.
       add({
@@ -882,6 +925,9 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
         inputs.push({ tag: f.tag, amount: f.rate * tended * usageScale, role: 'irrigation' })
       for (const f of p.fertilizer ?? [])
         inputs.push({ tag: f.tag, amount: f.rate * tended * usageScale, role: 'fertilizer' })
+      // A gas the plant breathes from the air around it, by the second while it grows.
+      for (const f of p.consumes ?? [])
+        inputs.push({ tag: f.tag, amount: f.rate * tended, role: 'atmosphere' })
       if (touched) {
         // A plant fertilized with the station's own material takes more of the same input.
         const kg = (touched.fertilizerKg * tended) / touchSeconds
@@ -965,17 +1011,27 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
       // Wild (pip-planted) plants need no irrigation or fertilizer and grow at a fraction of the rate.
       const wild = d.tuning.wildPlantGrowthModifier
       const wildCycles = duration / d.tuning.secondsPerCycle / wild
+      // A wild plant still breathes, at its wild rate, for the whole longer growth.
+      const breathes = (seconds: number): Flow[] =>
+        (p.consumes ?? []).map((f) => ({
+          tag: f.tag,
+          amount: f.wildRate * seconds,
+          role: 'atmosphere',
+        }))
       add({
         kind: 'crop',
         via: `${p.name} (wild)` + mutationName,
         viaId: p.id,
-        inputs: [],
+        inputs: breathes(duration / wild),
         outputs: [{ tag: p.crop.item, amount: count }, ...bonus],
         dlc: p.dlc,
         needs: { plant: p.id, extras: extras.length ? extras : undefined },
         wildFactor: wild,
         throughput: { runsPerCycle: 1 / wildCycles, instance: 'plant' },
-        notes: [`every ${fmt(wildCycles)} cycles when wild-planted; needs nothing`, ...boost],
+        notes: [
+          `every ${fmt(wildCycles)} cycles when wild-planted; needs nothing${p.consumes?.length ? ' but the gas it breathes' : ''}`,
+          ...boost,
+        ],
         seconds: duration / wild,
       })
       // A critter that eats the plant itself (a Drecko at a Mealwood, a Glo Squid at a Tublia)
@@ -1004,6 +1060,8 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
             amount: f.rate * cycle * usageScale,
             role: 'fertilizer',
           })
+        for (const f of p.consumes ?? [])
+          perCycleInputs.push({ tag: f.tag, amount: f.rate * cycle, role: 'atmosphere' })
         add({
           kind: 'graze',
           via: p.name + mutationName,
@@ -1021,7 +1079,11 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
             kind: 'graze',
             via: `${p.name} (wild)` + mutationName,
             viaId: p.id,
-            inputs: [],
+            inputs: (p.consumes ?? []).map((f) => ({
+              tag: f.tag,
+              amount: f.wildRate * cycle,
+              role: 'atmosphere' as const,
+            })),
             outputs: [{ tag: p.id, amount: wildPerCycle }],
             dlc: p.dlc,
             needs: { plant: p.id, extras: extras.length ? extras : undefined },
@@ -1048,6 +1110,51 @@ export function buildGraph(d: GameData, options: GraphOptions = {}): Graph {
     }
     // A seed that is the crop (Sleet Wheat Grain, Nosh Bean: productionType Crop) is already the
     // harvest above; listing it again would be a free, input-less second source of the same thing.
+    // A plant that converts one element into another all the while it lives (the Oxyfern:
+    // carbon dioxide to oxygen), priced per cycle of one plant with its irrigation and
+    // fertilizer for that cycle; wild, it runs at a fraction of the rate and needs nothing. The
+    // converter's output multiplier is left out: the game's own figures, and the wiki's, are
+    // the bare rates (an Oxyfern's 31 g/s of oxygen).
+    if (p.converts) {
+      const perCycleInputs: Flow[] = []
+      for (const f of p.irrigation ?? [])
+        perCycleInputs.push({ tag: f.tag, amount: f.rate * cycle, role: 'irrigation' })
+      for (const f of p.fertilizer ?? [])
+        perCycleInputs.push({ tag: f.tag, amount: f.rate * cycle, role: 'fertilizer' })
+      for (const f of p.converts.inputs)
+        perCycleInputs.push({ tag: f.tag, amount: f.rate * cycle, role: 'atmosphere' })
+      const outputs = p.converts.outputs.map((f) => ({ tag: f.tag, amount: f.rate * cycle }))
+      add({
+        kind: 'converter',
+        via: p.name,
+        viaId: p.id,
+        inputs: perCycleInputs,
+        outputs,
+        dlc: p.dlc,
+        needs: { plant: p.id },
+        throughput: { runsPerCycle: 1, instance: 'plant' },
+        notes: ['per cycle while it lives, tended'],
+        seconds: cycle,
+      })
+      const wildFactor = p.converts.wildFactor
+      add({
+        kind: 'converter',
+        via: `${p.name} (wild)`,
+        viaId: p.id,
+        inputs: p.converts.inputs.map((f) => ({
+          tag: f.tag,
+          amount: f.rate * cycle * wildFactor,
+          role: 'atmosphere' as const,
+        })),
+        outputs: outputs.map((f) => ({ tag: f.tag, amount: f.amount * wildFactor })),
+        dlc: p.dlc,
+        needs: { plant: p.id },
+        wildFactor,
+        throughput: { runsPerCycle: 1, instance: 'plant' },
+        notes: [`per cycle while it lives, wild-planted; needs nothing but the gas it breathes`],
+        seconds: cycle,
+      })
+    }
     if (p.seed && p.seed.count > 0 && p.seed.productionType !== 'Crop') {
       add({
         kind: 'seed',

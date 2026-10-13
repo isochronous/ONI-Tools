@@ -633,6 +633,33 @@ namespace OniDataDump
 					o["egg"] = fertility.eggPrefab.ToString();
 					o["cyclesPerEgg"] = fertility.baseFertileCycles;
 				}
+				// A Moo lays no egg: its Beckoning meter rises while it is well fed (the well-fed
+				// effect's modifier), and when full it calls a Moo Comet down from space, which
+				// leaves a new Moo, or a Husky Moo a few percent of the time.
+				BeckoningMonitor.Def beckoning = prefab.GetDef<BeckoningMonitor.Def>();
+				if (beckoning != null)
+				{
+					Klei.AI.Effect beckonEffect = Db.Get().effects.TryGet(beckoning.effectId);
+					string beckonDelta = Db.Get().Amounts.Beckoning.deltaAttribute.Id;
+					float perSecond = 0f;
+					if (beckonEffect != null)
+						foreach (Klei.AI.AttributeModifier m in beckonEffect.SelfModifiers)
+							if (m.AttributeId == beckonDelta)
+								perSecond = m.Value;
+					float max = Db.Get().Amounts.Beckoning.maxAttribute.BaseValue;
+					if (max <= 0f)
+						max = 100f;
+					var spawns = new JArray();
+					foreach (BeckoningMonitor.SongChance song in beckoning.initialSongWeights ?? new List<BeckoningMonitor.SongChance>())
+					{
+						GameObject comet = Assets.GetPrefab(song.meteorID);
+						GassyMooComet landing = comet != null ? comet.GetComponent<GassyMooComet>() : null;
+						if (landing?.craterPrefabs != null && landing.craterPrefabs.Length > 0)
+							spawns.Add(new JObject { ["critter"] = landing.craterPrefabs[0], ["weight"] = song.weight });
+					}
+					if (perSecond > 0f && spawns.Count > 0)
+						o["beckons"] = new JObject { ["cyclesPerBeckon"] = max / (perSecond * 600f), ["caloriesPerCycle"] = beckoning.caloriesPerCycle, ["spawns"] = spawns };
+				}
 				BabyMonitor.Def baby = prefab.GetDef<BabyMonitor.Def>();
 				if (baby != null)
 				{
@@ -889,6 +916,52 @@ namespace OniDataDump
 			return arr;
 		}
 
+		/// <summary>
+		/// A consumer's rate domesticated and wild. A plant whose own component has a
+		/// SetConsumptionRate method (Alveo Vera, Megafrond, Oxyfern) picks its rate from the
+		/// receptacle monitor's "replanted" flag; on an inactive clone of the prefab, with the
+		/// component's two required fields filled in by hand (it never spawned), the method is
+		/// run with the flag each way. Any other plant has one rate, the prefab's.
+		/// </summary>
+		private static float[] ReplantRates(GameObject prefab, ElementConsumer consumer)
+		{
+			float prefabRate = consumer.consumptionRate;
+			Component setter = prefab.GetComponents<KMonoBehaviour>().FirstOrDefault(c => c.GetType().GetMethod("SetConsumptionRate") != null);
+			if (setter == null || prefab.GetComponent<ReceptacleMonitor>() == null)
+				return new[] { prefabRate, prefabRate };
+			GameObject clone = null;
+			try
+			{
+				clone = UnityEngine.Object.Instantiate(prefab);
+				clone.SetActive(false);
+				Component comp = clone.GetComponent(setter.GetType());
+				ElementConsumer cloneConsumer = clone.GetComponent<ElementConsumer>();
+				ReceptacleMonitor monitor = clone.GetComponent<ReceptacleMonitor>();
+				var t = HarmonyLib.Traverse.Create(comp);
+				t.Field("elementConsumer").SetValue(cloneConsumer);
+				t.Field("receptacleMonitor").SetValue(monitor);
+				var replanted = HarmonyLib.Traverse.Create(monitor).Field("replanted");
+				System.Reflection.MethodInfo set = setter.GetType().GetMethod("SetConsumptionRate");
+				replanted.SetValue(true);
+				set.Invoke(comp, null);
+				float domestic = cloneConsumer.consumptionRate;
+				replanted.SetValue(false);
+				set.Invoke(comp, null);
+				float wild = cloneConsumer.consumptionRate;
+				return new[] { domestic, wild };
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning("[OniDataDump] cannot read " + prefab.name + "'s replanted consumption: " + e.Message);
+				return new[] { prefabRate, prefabRate };
+			}
+			finally
+			{
+				if (clone != null)
+					UnityEngine.Object.DestroyImmediate(clone);
+			}
+		}
+
 		private static JArray Plants()
 		{
 			var arr = new JArray();
@@ -902,7 +975,10 @@ namespace OniDataDump
 				if (grower?.BRANCH_PREFAB_NAME != null)
 					branchPrefabs.Add(grower.BRANCH_PREFAB_NAME);
 			}
-			foreach (GameObject prefab in Assets.GetPrefabsWithComponent<Growing>())
+			// Every plant: one that grows a crop, or one that only lives in a receptacle and
+			// breathes or converts (the Oxyfern has no Growing at all, having no crop).
+			foreach (GameObject prefab in Assets.Prefabs.Select(k => k.gameObject).Where(g => g != null && (g.GetComponent<Growing>() != null
+				|| (g.GetComponent<ReceptacleMonitor>() != null && (g.GetComponent<ElementConverter>() != null || g.GetComponent<ElementConsumer>() != null)))))
 			{
 				KPrefabID id = prefab.GetComponent<KPrefabID>();
 				if (branchPrefabs.Contains(id.PrefabTag.ToString()))
@@ -936,6 +1012,43 @@ namespace OniDataDump
 						o["branchCrop"] = harvest;
 					else
 						o["crop"] = harvest;
+				}
+				// What the living plant takes from and gives to the air around it: an ElementConsumer
+				// (a Dasha Saltvine's chlorine, a Hydrocactus's oxygen) and, on the Oxyfern, an
+				// ElementConverter fed by its own consumer. Some plants eat more once domesticated
+				// (Alveo Vera, Megafrond, Oxyfern); their own component sets the rate from whether
+				// the receptacle monitor says replanted, and that is run both ways on a throwaway
+				// clone to read the two rates (see ReplantRates).
+				ElementConverter converter = prefab.GetComponent<ElementConverter>();
+				var consumes = new JArray();
+				float converterWildFactor = 1f;
+				foreach (ElementConsumer c in prefab.GetComponents<ElementConsumer>())
+				{
+					// A Wheezewort's consumer takes any gas at all as its way of cooling; not an input.
+					if (c.configuration != ElementConsumer.Configuration.Element || c.elementToConsume == SimHashes.Vacuum)
+						continue;
+					float[] rates = ReplantRates(prefab, c);
+					if (c.storeOnConsume && converter != null)
+					{
+						// Gathers for the converter, whose own rate is the one that counts; wild, it
+						// gathers less and the converter runs that much slower.
+						if (rates[0] > 0f)
+							converterWildFactor = rates[1] / rates[0];
+						continue;
+					}
+					consumes.Add(new JObject { ["tag"] = c.elementToConsume.ToString(), ["rate"] = rates[0], ["wildRate"] = rates[1] });
+				}
+				if (consumes.Count > 0)
+					o["consumes"] = consumes;
+				if (converter != null)
+				{
+					o["converts"] = new JObject
+					{
+						["inputs"] = new JArray((converter.consumedElements ?? new ElementConverter.ConsumedElement[0]).Select(ce => new JObject { ["tag"] = ce.Tag.ToString(), ["rate"] = ce.MassConsumptionRate })),
+						["outputs"] = new JArray((converter.outputElements ?? new ElementConverter.OutputElement[0]).Select(oe => new JObject { ["tag"] = oe.elementHash.ToString(), ["rate"] = oe.massGenerationRate })),
+						["outputMultiplier"] = converter.OutputMultiplier,
+						["wildFactor"] = converterWildFactor,
+					};
 				}
 				IrrigationMonitor.Def irrigation = prefab.GetDef<IrrigationMonitor.Def>();
 				if (irrigation?.consumedElements != null)

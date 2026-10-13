@@ -302,7 +302,9 @@ function stepText(n: Node): string {
   if (roles.has('irrigation')) verbs.push('irrigate')
   if (roles.has('fertilizer')) verbs.push('fertilize')
   if (roles.has('tending')) verbs.push('tend')
-  const use = verbs.length ? `used to ${verbs.join(' and ')}` : ''
+  let use = verbs.length ? `used to ${verbs.join(' and ')}` : ''
+  // A gas the plant takes from the air around it (a Dasha Saltvine's chlorine).
+  if (roles.has('atmosphere')) use = use ? `${use}, and breathed by,` : 'breathed by'
   if (roles.has('prey'))
     return use ? `${use}, and fed to, ${n.process.via}` : `fed to ${n.process.via}`
   return `${use} ${n.process.via}`

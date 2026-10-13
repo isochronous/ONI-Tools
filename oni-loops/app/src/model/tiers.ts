@@ -304,6 +304,7 @@ function describe(d: GameData, p: Process, worst: Tier): string {
     case 'diet':
       return `excreted by ${p.via} fed ${from}`
     case 'egg':
+    case 'beckon':
     case 'shear':
     case 'milk':
     case 'grow':
