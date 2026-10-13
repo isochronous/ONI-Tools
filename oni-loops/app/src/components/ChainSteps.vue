@@ -402,7 +402,12 @@ function doer(n: Node): string | undefined {
         </ol>
       </template>
       <p class="result">
-        <span class="amount num"
+        <!-- A loop that feeds its product back makes more than it nets: the gross, what goes back in, and the net. -->
+        <span v-if="root.amount > 1 + 1e-9" class="amount num"
+          ><TagIcon :tag="root.output" />{{ fmt(at(root.amount)) }} made −
+          {{ fmt(at(root.amount - 1)) }} fed back = {{ qty(at(1), root.output) }}</span
+        >
+        <span v-else class="amount num"
           ><TagIcon :tag="root.output" />{{ qty(at(root.amount), root.output) }}</span
         >
       </p>
