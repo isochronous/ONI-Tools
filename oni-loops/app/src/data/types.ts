@@ -1,0 +1,398 @@
+/**
+ * Shape of data/<build>.json as written by tools/OniDataDump and tools/import-dump.py.
+ * Amounts are the game's own units: kg for recipes and drops, kg/s for building rates,
+ * kcal for calories. Tags are the game's internal ids; names come from `names`.
+ */
+
+export type DlcId = 'EXPANSION1_ID' | 'DLC2_ID' | 'DLC3_ID' | 'DLC4_ID' | 'DLC5_ID'
+
+export interface DlcRestriction {
+  requires: string[]
+  forbids: string[]
+}
+
+export interface GameInfo {
+  build: string
+  dumpedAt: string
+  activeDlcs: string[]
+}
+
+export interface Tuning {
+  /** How fast a Duplicant's bladder fills, out of 100 (1/6 per second: one toilet visit a cycle). */
+  bladderPerSecond?: number
+  /** A tame critter lays eggs (1 + this × happiness) times faster while happiness is positive. */
+  fertilityPerHappiness?: number
+  wildPlantGrowthModifier: number
+  wildCritterCalorieBurnRatio: number
+  wildCritterGrowthModifier: number
+  secondsPerCycle: number
+  /** Kelvin past lowTemp/highTemp before the sim actually changes phase. */
+  stateTransitionBufferK: number
+  /** A Mimika's pollination: growth bonus (0.25 = +25%), how long one lasts, and the pause between plants. Absent in older dumps; newer ones carry it on the critter as `tends`. */
+  pollination?: { growthBonus: number; effectSeconds: number; searchCooldownSeconds: number }
+  /**
+   * Farmer's Touch from a Farm Station: a Duplicant with the Farmer skill turns fertilizerKg
+   * of `material` into one `tool` (toolSeconds at the station) and applies it to a plant in a
+   * Farm room (workSeconds), which grows 1 + growthBonus times as fast for effectSeconds,
+   * longer by botanistBonus per point of the Duplicant's Botanist. Absent in older dumps.
+   */
+  farmTinker?: {
+    material: string
+    fertilizerKg: number
+    tool: string
+    growthBonus: number
+    effectSeconds: number
+    botanistBonus: number
+    toolSeconds: number
+    workSeconds: number
+  }
+}
+
+export interface ElementData {
+  id: string
+  name: string
+  state: 'solid' | 'liquid' | 'gas' | 'other'
+  dlc: string
+  disabled: boolean
+  materialCategory: string
+  tags: string[]
+  lowTemp: number
+  highTemp: number
+  lowTempTarget: string
+  highTempTarget: string
+  highTempOre?: { id: string; massFraction: number }
+  lowTempOre?: { id: string; massFraction: number }
+  sublimate?: {
+    id: string
+    rate: number
+    efficiency: number
+    /** True when the off-gassing is from debris (a Sublimates component), not the element in a tile. */
+    debris?: boolean
+    massPower?: number
+    maxDestinationMass?: number
+  }
+  convertId?: string
+}
+
+export interface ItemData {
+  id: string
+  name: string
+  tags: string[]
+  dlc: DlcRestriction
+  kind: 'food' | 'seed' | 'egg' | 'critter' | 'plant' | 'item'
+  calories?: number
+  /** Seconds until this food spoils at room temperature; absent for food that never spoils. */
+  spoilSeconds?: number
+  sublimates?: { element: string; rate: number }
+}
+
+export interface Amount {
+  tag: string
+  amount: number
+}
+
+export interface RecipeData {
+  id: string
+  fabricators: string[]
+  time: number
+  ingredients: { options: Amount[]; doNotConsume: boolean }[]
+  results: Amount[]
+  radboltsIn?: number
+  radboltsOut?: number
+}
+
+export interface BuildingFlow {
+  tag: string
+  rate?: number
+  amountPerUse?: number
+  via: string
+  /** The building only takes this input at or above this temperature (the Steam Turbine's 125 C). */
+  minTemperatureK?: number
+}
+
+export interface BuildingData {
+  id: string
+  name: string
+  dlc: DlcRestriction
+  inputs: BuildingFlow[]
+  outputs: BuildingFlow[]
+  /** Pipe the building draws its input from ("Liquid", "Gas"), when it has one. */
+  inputConduit?: string
+  /** Pipe the building sends its product down, when it has one; otherwise it drops it in the world. */
+  outputConduit?: string
+  /** The terrain feature the building has to be built on (an Oil Well on an Oil Reservoir), by prefab id. */
+  attachesTo?: string
+}
+
+/**
+ * A terrain feature a building sits on: an Oil Reservoir, or a Thermal Gas Fissure. Worlds
+ * place them through the same template rules as geysers, listed under `geyserRules`.
+ */
+export interface FeatureData {
+  id: string
+  name: string
+  dlc: DlcRestriction
+  /** A fissure: it bubbles gas while it builds up, then blocks until a drill clears it, dropping a solid. */
+  vent?: {
+    bubbleElement: string
+    bubbleRatePerSecond: number
+    buildUpSeconds: number
+    solidElement: string
+    solidMass: number
+    drill: { building: string; input: string; ratePerSecond: number; seconds: number }
+  }
+}
+
+export interface DietData {
+  eats: string[]
+  produces: string
+  caloriesPerKg: number
+  producedPerKgEaten: number
+}
+
+export interface CritterData {
+  id: string
+  name: string
+  dlc: DlcRestriction
+  diet?: DietData[]
+  caloriesBurnedPerCycle?: number
+  stomachCalories?: number
+  deathDrops?: { tag: string; count: number }[]
+  egg?: string
+  cyclesPerEgg?: number
+  adult?: string
+  growDrop?: string
+  shear?: {
+    item: string
+    atmosphere: string
+    /** Kilograms dropped per shearing. */
+    mass?: number
+    /** Seconds for a tame critter to regrow its scales. */
+    seconds?: number
+  }
+  /**
+   * Calorie-driven milking (Gassy Moo, Husky Moo, Glo Squid): eating keeps a well-fed effect
+   * going that fills a milk amount by ratePercentPerSecond out of 100; at 100 the critter asks
+   * for a Milking Station, which drains capacity kg of the element.
+   */
+  milk?: {
+    element: string
+    capacity: number
+    /** Each this many kcal eaten buys 600 s of production. */
+    caloriesPerCycle: number
+    effect?: string
+    ratePercentPerSecond: number
+  }
+  /** Fertility-driven milking (Seaquine): a milking drops mass kg and spends fertilityConsumed of the fertility bar. */
+  fertilityMilk?: {
+    element: string
+    mass: number
+    minFertility: number
+    fertilityConsumed: number
+    requiresHappy: boolean
+  }
+  /** Well-fed shearing (Flox antlers, Rhex feathers, Orehull shell): fed for growthCycles, then sheared for mass kg. */
+  wellFedShear?: {
+    item: string
+    mass: number
+    growthCycles: number
+    levels: number
+    caloriesPerCycle: number
+    effect?: string
+    ratePercentPerSecond: number
+    /** Only this food counts as being fed, when set. */
+    requiredDiet?: string | null
+  }
+  /** Cycles until it dies of old age. */
+  lifespanCycles?: number
+  /**
+   * Tends crops (a Mimika pollinating, a Sweetle or Grubgrub tending): a visit gives the plant
+   * `effect`, 1 + growthBonus times its growth for effectSeconds, and the critter visits
+   * plantsPerCycle plants a cycle, going to `prefers` first. Absent in older dumps.
+   */
+  /**
+   * A Moo's way of multiplying: well fed, its beckoning meter fills over this many cycles,
+   * and it calls a Moo Comet down that leaves one of these critters (weights sum to 1).
+   * Absent in older dumps.
+   */
+  beckons?: {
+    cyclesPerBeckon: number
+    caloriesPerCycle: number
+    spawns: { critter: string; weight: number }[]
+  }
+  tends?: {
+    effect: string
+    growthBonus: number
+    effectSeconds: number
+    plantsPerCycle: number
+    prefers?: string[]
+  }
+}
+
+export interface PlantData {
+  id: string
+  name: string
+  dlc: DlcRestriction
+  crop?: { item: string; durationSeconds: number; count: number }
+  /** A tree whose trunk is harvested too (a Bonbon Tree's nectar): the branches' harvest, all of them together, as a second crop. Absent in older dumps. */
+  branchCrop?: { item: string; durationSeconds: number; count: number }
+  irrigation?: { tag: string; rate: number }[]
+  fertilizer?: { tag: string; rate: number }[]
+  seed?: { item: string; productionType: string; count: number }
+  skilledHarvestBonus?: Amount
+  /** A vine mother or a tree: the crop count is for all of this many vines or branches on one plant. */
+  branches?: number
+  /**
+   * A gas the living plant takes from the air around it (a Dasha Saltvine's chlorine, a
+   * Hydrocactus's oxygen), kg/s while domesticated and while wild. Absent in older dumps.
+   */
+  consumes?: { tag: string; rate: number; wildRate: number }[]
+  /**
+   * A plant that converts one element into another continuously (the Oxyfern: carbon dioxide
+   * to oxygen), kg/s while domesticated; wild it runs at wildFactor of that. The output
+   * multiplier is the converter's, recorded but not applied. Absent in older dumps.
+   */
+  converts?: {
+    inputs: { tag: string; rate: number }[]
+    outputs: { tag: string; rate: number }[]
+    outputMultiplier?: number
+    wildFactor: number
+  }
+  /** Wilts unless a Mimika, Sweetle, or Grubgrub tends it. */
+  needsPollination?: boolean
+  /** Critter prefab ids a flytrap plant eats, one per harvest, when it is one. */
+  prey?: string[]
+  /** How critters that eat the living plant feed from it. Absent in older dumps. */
+  grazing?: GrazingData[]
+}
+
+/**
+ * A way of eating the plant itself (a Drecko at a Mealwood, a Pip at an Arbor Tree's branches,
+ * a Pipsqueak at a Bonbon Tree). Diets price such food per unit: a unit of growth is one cycle
+ * of a tended plant's maturity (branches: of all its branches together); storage is kilograms
+ * of `tag` the plant holds.
+ */
+export interface GrazingData {
+  kind: 'growth' | 'branches' | 'storage'
+  /** What a tended plant regrows per cycle, in the diet's unit. */
+  unitsPerCycle: number
+  /** The same for a wild plant (growth and branches only). */
+  wildUnitsPerCycle?: number
+  branches?: number
+  /** Share of full growth (or of a full store) below which critters leave it alone. */
+  minMaturity?: number
+  /** storage only: the element eaten. */
+  tag?: string
+}
+
+/** A radiation mutation a seed can carry; multipliers are the game's own (yield 0.5 means x1.5). */
+export interface PlantMutationData {
+  id: string
+  name: string
+  yield?: number
+  /** Growth time multiplier. */
+  growth?: number
+  /** Water and fertilizer use multiplier. */
+  usage?: number
+  bonusCrop?: { tag: string; amount: number }
+  /** Rads the plant needs to stay viable. */
+  minRadiation?: number
+  minLux?: number
+  onlyFor?: string[]
+  notFor?: string[]
+}
+
+export interface GeyserData {
+  id: string
+  element: string
+  dlc: DlcRestriction
+  temperature: number
+  minRatePerCycle: number
+  maxRatePerCycle: number
+}
+
+export interface GeyserRule {
+  ruleId: string
+  /** GuaranteeOne, GuaranteeSome, GuaranteeSomeTryMore, GuaranteeAll, GuaranteeRange, TryOne, TrySome, ... */
+  listRule: string
+  someCount: number
+  moreCount: number
+  rangeMin: number
+  rangeMax: number
+  times: number
+  /**
+   * Each template and the geyser prefabs it contains ("GeyserGeneric_molten_iron"; plain
+   * "GeyserGeneric" = seed-random type), plus terrain features buildings sit on ("OilWell").
+   */
+  templates: { template: string; geysers: string[] }[]
+}
+
+export interface WorldData {
+  world: string
+  name: string
+  dlc: DlcRestriction
+  biomes: string[]
+  elements: string[]
+  geyserRules: GeyserRule[]
+}
+
+export interface ClusterData {
+  id: string
+  name: string
+  dlc: DlcRestriction
+  startWorldIndex: number
+  /** World ids, as in WorldData.world. */
+  worlds: string[]
+  spacePois: { pois: string[]; numToSpawn: number; guarantee: boolean }[]
+}
+
+/** A base-game rocket destination (the Starmap without Spaced Out). */
+export interface SpaceDestinationData {
+  id: string
+  name: string
+  visitable: boolean
+  cyclesToRecover: number
+  /** kg a destination holds when fully recharged. */
+  massToRecover: number
+  minMass: number
+  maxMass: number
+  /** Element id -> weight range; each trip's cargo is split between the elements in proportion to a per-destination roll of these weights. */
+  elements: Record<string, { min: number; max: number }>
+  /** Prefab id -> count of critters or seeds recoverable per trip. */
+  entities: Record<string, number>
+}
+
+export interface SpacePoiData {
+  id: string
+  dlc: DlcRestriction
+  /** Element id -> relative weight of the POI's mass. */
+  elements: Record<string, number>
+  capacityMin: number
+  capacityMax: number
+  rechargeMin: number
+  rechargeMax: number
+}
+
+export interface GameData {
+  game: GameInfo
+  tuning: Tuning
+  dlcs: { id: string; name: string }[]
+  names: Record<string, string>
+  elements: ElementData[]
+  items: ItemData[]
+  recipes: RecipeData[]
+  buildings: BuildingData[]
+  /** Every fabricator, with whether a Duplicant works it for the whole craft. */
+  fabricators?: { id: string; duplicantOperated: boolean }[]
+  plantMutations?: PlantMutationData[]
+  critters: CritterData[]
+  plants: PlantData[]
+  geysers: GeyserData[]
+  /** Terrain features buildings sit on; older dumps lack it. */
+  features?: FeatureData[]
+  worldgen: WorldData[]
+  clusters: ClusterData[]
+  spacePois: SpacePoiData[]
+  /** Base-game Starmap destinations; the import script empties this for a Spaced Out dump, and older dumps lack it. */
+  spaceDestinations?: SpaceDestinationData[]
+}

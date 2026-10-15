@@ -1,0 +1,3 @@
+title: "ONI Data Dump (oni-loops)"
+description: "Development tool, not for players: writes the game's conversion data (elements, recipes, converters, critters, plants, geysers) to oni-data-dump.json in the game's save folder when the main menu opens."
+staticID: "Isochronous.OniDataDump"
