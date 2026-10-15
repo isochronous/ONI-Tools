@@ -3,7 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ["app/**", "data/**", ".github/workflows/pages.yml"]
+    paths: ["oni-loops/app/**", "oni-loops/data/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -24,14 +24,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: app/package-lock.json
+          cache-dependency-path: oni-loops/app/package-lock.json
       - run: npm ci
-        working-directory: app
+        working-directory: oni-loops/app
       - run: npm run build
-        working-directory: app
+        working-directory: oni-loops/app
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: app/dist
+          path: oni-loops/app/dist
 
   deploy:
     needs: build

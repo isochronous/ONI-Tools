@@ -1,0 +1,3 @@
+[submodule "oni-loops/common"]
+	path = oni-loops/common
+	url = https://github.com/isochronous/oni-mods-common.git
