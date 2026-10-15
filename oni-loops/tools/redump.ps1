@@ -7,7 +7,7 @@
 $ErrorActionPreference = 'Stop'
 $klei = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Klei\OxygenNotIncluded'
 $prefs = Join-Path $klei 'kplayerprefs.yaml'
-$modtest = 'C:\dev\ONI-Mods\oni-mods-common\tools\ModTest\Test-OniMods.ps1'
+$modtest = Join-Path $PSScriptRoot '..\common\tools\ModTest\Test-OniMods.ps1'
 $orig = Get-Content $prefs -Raw
 function Set-Mode([int]$on) {
     $t = Get-Content $prefs -Raw
