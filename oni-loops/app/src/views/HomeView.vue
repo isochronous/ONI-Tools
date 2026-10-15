@@ -60,7 +60,7 @@ function setTarget(tag: string) {
 watch(
   target,
   (t) => {
-    document.title = t ? `${label(t)} · ONI Loops` : 'ONI Loops'
+    document.title = t ? `${label(t)} · ONI Production Chain Finder` : 'ONI Production Chain Finder'
   },
   { immediate: true },
 )

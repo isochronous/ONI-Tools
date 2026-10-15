@@ -21,7 +21,7 @@ const build = gameData.game.build.split('-').slice(0, 2).join('-')
             <path d="M12 4a8 8 0 1 1-7.4 5" />
             <path d="M3.2 4.2v5.2h5.2" />
           </svg>
-          ONI Loops
+          ONI Production Chain Finder
         </RouterLink>
       </h1>
       <p class="sub">
